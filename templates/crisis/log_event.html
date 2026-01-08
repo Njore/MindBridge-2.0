@@ -1,0 +1,82 @@
+<!-- templates/crisis/log_event.html -->
+{% extends "base.html" %}
+{% block title %}Log Crisis Event - MindBridge{% endblock %}
+{% block content %}
+<div class="alert alert-danger">
+    <h5><i class="bi bi-exclamation-triangle-fill"></i> Emergency?</h5>
+    <p>If you're in immediate danger, please call <strong>911</strong> or go to your nearest emergency room.</p>
+    <div class="d-grid gap-2 d-md-flex">
+        <a href="tel:988" class="btn btn-light">Call 988 - Crisis Lifeline</a>
+        <a href="sms:741741&body=HELLO" class="btn btn-light">Text 741741 - Crisis Line</a>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h4><i class="bi bi-clipboard-check"></i> Log Crisis Event</h4>
+    </div>
+    <div class="card-body">
+        <p class="text-muted">Documenting your crisis can help you and your therapist understand patterns and develop better coping strategies.</p>
+
+        <form method="POST">
+            <div class="mb-3">
+                <label for="crisis_type" class="form-label">What are you experiencing? *</label>
+                <select class="form-select" id="crisis_type" name="crisis_type" required>
+                    <option value="">Select...</option>
+                    <option value="suicidal_ideation">Suicidal Thoughts</option>
+                    <option value="self_harm_urge">Self-Harm Urges</option>
+                    <option value="severe_panic">Severe Panic Attack</option>
+                    <option value="severe_anxiety">Severe Anxiety</option>
+                    <option value="dissociation">Dissociation</option>
+                    <option value="other">Other Crisis</option>
+                </select>
+            </div>
+
+            <div class="mb-3">
+                <label for="severity_level" class="form-label">Severity Level (1-10) *</label>
+                <input type="range" class="form-range" id="severity_level" name="severity_level"
+                       min="1" max="10" value="5"
+                       oninput="this.nextElementSibling.textContent = this.value">
+                <div class="text-center"><strong>5</strong></div>
+                <small class="text-muted">1 = Manageable, 10 = Most severe</small>
+            </div>
+
+            <div class="mb-3">
+                <label for="description" class="form-label">What's happening? *</label>
+                <textarea class="form-control" id="description" name="description" rows="5"
+                          required placeholder="Describe what you're feeling and experiencing..."></textarea>
+            </div>
+
+            <div class="mb-3">
+                <label for="immediate_action" class="form-label">What have you done so far?</label>
+                <input type="text" class="form-control" id="immediate_action" name="immediate_action"
+                       placeholder="e.g., Called a friend, used breathing techniques, took medication">
+            </div>
+
+            <div class="mb-3 form-check">
+                <input type="checkbox" class="form-check-input" id="notify_therapist"
+                       name="notify_therapist" checked>
+                <label class="form-check-label" for="notify_therapist">
+                    <strong>Notify my therapist immediately</strong>
+                    <br><small class="text-muted">Your therapist will receive an urgent alert</small>
+                </label>
+            </div>
+
+            <div class="alert alert-info">
+                <i class="bi bi-info-circle"></i> <strong>What happens next?</strong>
+                <ul class="mb-0">
+                    <li>Your event will be documented securely</li>
+                    <li>If severity is 8+, your therapist will be notified automatically</li>
+                    <li>You'll have access to de-escalation techniques</li>
+                    <li>Emergency resources are always available</li>
+                </ul>
+            </div>
+
+            <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                <a href="{{ url_for('crisis.index') }}" class="btn btn-secondary">Cancel</a>
+                <button type="submit" class="btn btn-danger">Log Crisis Event</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

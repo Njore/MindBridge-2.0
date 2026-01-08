@@ -1,0 +1,116 @@
+<!-- templates/client/journal.html -->
+{% extends "base.html" %}
+{% block title %}Journal - MindBridge{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1><i class="bi bi-journal-text"></i> My Journal</h1>
+    <a href="{{ url_for('client.add_journal_entry') }}" class="btn btn-info">
+        <i class="bi bi-plus-circle"></i> New Entry
+    </a>
+</div>
+
+<div class="alert alert-info">
+    <i class="bi bi-lightbulb"></i> <strong>Journaling Tip:</strong> Regular journaling can help process emotions, track progress, and prepare for therapy sessions. Share entries with your therapist for deeper insights.
+</div>
+
+{% if notes.items %}
+    {% for note in notes.items %}
+    <div class="card mb-3">
+        <div class="card-header">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    {% if note.title %}
+                        <h6 class="mb-0">{{ note.title }}</h6>
+                    {% else %}
+                        <h6 class="mb-0">Journal Entry</h6>
+                    {% endif %}
+                    <small class="text-muted">{{ note.created_at.strftime('%B %d, %Y %I:%M %p') }}</small>
+                </div>
+                <div>
+                    <span class="badge bg-secondary">{{ note.note_type.value.replace('_', ' ').title() }}</span>
+                    {% if note.is_shared_with_therapist %}
+                        <span class="badge bg-primary">Shared</span>
+                    {% endif %}
+                    {% if note.therapist_has_reviewed %}
+                        <span class="badge bg-success">Reviewed</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        <div class="card-body">
+            <p style="white-space: pre-wrap;">{{ note.content }}</p>
+
+            {% if note.mood_before or note.mood_after %}
+            <div class="row mt-3">
+                {% if note.mood_before %}
+                <div class="col-md-6">
+                    <small class="text-muted"><strong>Mood Before:</strong></small>
+                    <div class="progress" style="height: 20px;">
+                        <div class="progress-bar {% if note.mood_before >= 7 %}bg-success{% elif note.mood_before >= 4 %}bg-warning{% else %}bg-danger{% endif %}"
+                             style="width: {{ note.mood_before * 10 }}%">
+                            {{ note.mood_before }}/10
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if note.mood_after %}
+                <div class="col-md-6">
+                    <small class="text-muted"><strong>Mood After:</strong></small>
+                    <div class="progress" style="height: 20px;">
+                        <div class="progress-bar {% if note.mood_after >= 7 %}bg-success{% elif note.mood_after >= 4 %}bg-warning{% else %}bg-danger{% endif %}"
+                             style="width: {{ note.mood_after * 10 }}%">
+                            {{ note.mood_after }}/10
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            {% if note.therapist_feedback %}
+            <hr class="my-3">
+            <div class="alert alert-info mb-0">
+                <strong><i class="bi bi-chat-square-quote"></i> Therapist Feedback:</strong>
+                <p class="mb-0 mt-2" style="white-space: pre-wrap;">{{ note.therapist_feedback }}</p>
+                <small class="text-muted">{{ note.therapist_review_date.strftime('%B %d, %Y') }}</small>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+
+    <!-- Pagination -->
+    <nav>
+        <ul class="pagination justify-content-center">
+            {% if notes.has_prev %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ notes.prev_num }}">Previous</a>
+                </li>
+            {% endif %}
+
+            {% for page_num in notes.iter_pages(left_edge=1, right_edge=1, left_current=1, right_current=2) %}
+                {% if page_num %}
+                    <li class="page-item {% if page_num == notes.page %}active{% endif %}">
+                        <a class="page-link" href="?page={{ page_num }}">{{ page_num }}</a>
+                    </li>
+                {% else %}
+                    <li class="page-item disabled"><span class="page-link">...</span></li>
+                {% endif %}
+            {% endfor %}
+
+            {% if notes.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ notes.next_num }}">Next</a>
+                </li>
+            {% endif %}
+        </ul>
+    </nav>
+{% else %}
+    <div class="alert alert-info">
+        <h5><i class="bi bi-info-circle"></i> No journal entries yet</h5>
+        <p class="mb-0">Start your journaling journey. Write about your thoughts, feelings, and experiences.</p>
+        <a href="{{ url_for('client.add_journal_entry') }}" class="btn btn-info mt-3">Create Your First Entry</a>
+    </div>
+{% endif %}
+{% endblock %}

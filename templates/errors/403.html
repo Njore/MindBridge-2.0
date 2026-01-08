@@ -1,0 +1,18 @@
+<!-- templates/errors/403.html -->
+{% extends "base.html" %}
+{% block title %}Access Denied - MindBridge{% endblock %}
+{% block content %}
+<div class="text-center my-5">
+    <i class="bi bi-shield-x text-danger" style="font-size: 5rem;"></i>
+    <h1 class="display-1">403</h1>
+    <h2>Access Denied</h2>
+    <p class="lead">You don't have permission to access this resource.</p>
+    <p class="text-muted">This area is restricted to specific user types or roles.</p>
+    <div class="mt-4">
+        <a href="{{ url_for('index') }}" class="btn btn-primary">Go Home</a>
+        {% if not current_user %}
+            <a href="{{ url_for('auth.login') }}" class="btn btn-outline-primary">Login</a>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

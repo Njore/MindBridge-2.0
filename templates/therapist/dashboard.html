@@ -1,0 +1,121 @@
+<!-- templates/therapist/dashboard.html -->
+{% extends "base.html" %}
+{% block title %}Therapist Dashboard - MindBridge{% endblock %}
+{% block content %}
+<h1 class="mb-4">Therapist Dashboard</h1>
+
+{% if crisis_alerts %}
+<div class="alert alert-danger">
+    <h5><i class="bi bi-exclamation-triangle-fill"></i> Crisis Alerts ({{ crisis_alerts|length }})</h5>
+    <p>The following clients have logged high-severity triggers requiring immediate attention:</p>
+    <ul>
+        {% for trigger in crisis_alerts %}
+        <li>
+            <strong>{{ trigger.client.get_full_name() }}</strong> - Intensity: {{ trigger.intensity_level }}/10
+            (<a href="{{ url_for('therapist.view_trigger', trigger_id=trigger.trigger_id) }}">View Details</a>)
+        </li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card stat-card">
+            <h3>{{ active_relationships|length }}</h3>
+            <p>Active Clients</p>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card">
+            <h3>{{ recent_breakthroughs|length }}</h3>
+            <p>Recent Breakthroughs</p>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card">
+            <h3>{{ recent_triggers|length }}</h3>
+            <p>Recent Triggers</p>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card">
+            <h3>{{ crisis_alerts|length }}</h3>
+            <p>Crisis Alerts</p>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-people-fill"></i> Active Clients
+            </div>
+            <div class="card-body">
+                {% if active_relationships %}
+                    <div class="list-group">
+                        {% for rel in active_relationships %}
+                        <a href="{{ url_for('therapist.client_detail', client_id=rel.client_id) }}" class="list-group-item list-group-item-action">
+                            <div class="d-flex w-100 justify-content-between">
+                                <h6 class="mb-1">{{ rel.client_user.get_full_name() }}</h6>
+                                <small class="text-muted">Since {{ rel.relationship_start_date.strftime('%B %Y') }}</small>
+                            </div>
+                        </a>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="text-muted">No active clients yet.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-star-fill text-warning"></i> Recent Client Breakthroughs
+            </div>
+            <div class="card-body">
+                {% if recent_breakthroughs %}
+                    {% for breakthrough in recent_breakthroughs[:5] %}
+                    <div class="mb-3 p-3 border rounded">
+                        <div class="d-flex justify-content-between">
+                            <h6>{{ breakthrough.client.get_full_name() }}</h6>
+                            <span class="badge bg-success">{{ breakthrough.impact_level.value }}</span>
+                        </div>
+                        <p class="mb-1"><strong>{{ breakthrough.title }}</strong></p>
+                        <small class="text-muted">{{ breakthrough.created_at.strftime('%B %d, %Y') }}</small>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <p class="text-muted">No recent breakthroughs.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-lightning-fill"></i> Quick Actions
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2 d-md-flex">
+                    <a href="{{ url_for('therapist.create_prompt') }}" class="btn btn-primary">
+                        <i class="bi bi-plus-circle"></i> Create Therapeutic Prompt
+                    </a>
+                    <a href="{{ url_for('therapist.clients') }}" class="btn btn-outline-primary">
+                        <i class="bi bi-people"></i> View All Clients
+                    </a>
+                    <a href="{{ url_for('messaging.inbox') }}" class="btn btn-outline-primary">
+                        <i class="bi bi-envelope"></i> Messages
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

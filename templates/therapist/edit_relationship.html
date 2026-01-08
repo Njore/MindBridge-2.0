@@ -1,0 +1,97 @@
+<!-- templates/therapist/edit_relationship.html -->
+{% extends "base.html" %}
+{% block title %}Edit Relationship - {{ client.get_full_name() }} - MindBridge{% endblock %}
+{% block content %}
+<div class="row">
+    <div class="col-lg-8 mx-auto">
+        <div class="mb-3">
+            <a href="{{ url_for('therapist.client_detail', client_id=client.user_id) }}" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left"></i> Back to Client Details
+            </a>
+        </div>
+
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0"><i class="bi bi-pencil-square"></i> Edit Relationship Details</h4>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info mb-4">
+                    <i class="bi bi-info-circle"></i> Editing relationship with <strong>{{ client.get_full_name() }}</strong>
+                </div>
+
+                <form method="POST">
+                    <div class="mb-3">
+                        <label class="form-label"><strong>Relationship Status:</strong></label>
+                        <p class="form-control-plaintext">
+                            <span class="badge {% if relationship.status.value == 'active' %}bg-success{% else %}bg-secondary{% endif %}">
+                                {{ relationship.status.value.title() }}
+                            </span>
+                        </p>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label"><strong>Start Date:</strong></label>
+                        <p class="form-control-plaintext">{{ relationship.relationship_start_date.strftime('%B %d, %Y') }}</p>
+                    </div>
+
+                    <hr>
+
+                    <div class="mb-3">
+                        <label for="client_goals" class="form-label">
+                            Client Goals
+                        </label>
+                        <textarea class="form-control"
+                                  id="client_goals"
+                                  name="client_goals"
+                                  rows="5">{{ relationship.client_goals or '' }}</textarea>
+                        <div class="form-text">Document and update the client's therapeutic goals</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="therapist_notes" class="form-label">
+                            Therapist Notes
+                        </label>
+                        <textarea class="form-control"
+                                  id="therapist_notes"
+                                  name="therapist_notes"
+                                  rows="5">{{ relationship.therapist_notes or '' }}</textarea>
+                        <div class="form-text">Private notes for your reference (not shared with client)</div>
+                    </div>
+
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-between mt-4">
+                        <a href="{{ url_for('therapist.client_detail', client_id=client.user_id) }}"
+                           class="btn btn-outline-secondary">
+                            Cancel
+                        </a>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-save"></i> Save Changes
+                        </button>
+                    </div>
+                </form>
+
+                {% if relationship.status.value == 'active' %}
+                <hr class="my-4">
+
+                <div class="card border-danger">
+                    <div class="card-header bg-danger text-white">
+                        <h6 class="mb-0"><i class="bi bi-exclamation-triangle"></i> End Relationship</h6>
+                    </div>
+                    <div class="card-body">
+                        <p class="mb-3">
+                            Ending this relationship will change its status and prevent new therapeutic interactions.
+                            All existing data will be preserved for records.
+                        </p>
+                        <form method="POST" action="{{ url_for('therapist.end_relationship', client_id=client.user_id) }}"
+                              onsubmit="return confirm('Are you sure you want to end this therapeutic relationship? This action cannot be undone.');">
+                            <button type="submit" class="btn btn-danger">
+                                <i class="bi bi-x-circle"></i> End Relationship
+                            </button>
+                        </form>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

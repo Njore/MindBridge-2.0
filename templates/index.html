@@ -1,0 +1,52 @@
+<!-- templates/index.html -->
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row align-items-center min-vh-75">
+    <div class="col-lg-6">
+        <h1 class="display-4 fw-bold mb-4">Welcome to <span style="color: var(--primary-color);">MindBridge</span></h1>
+        <p class="lead mb-4">
+            Connecting the gaps between therapy sessions. A secure platform for continuous therapeutic engagement and mental wellness support.
+        </p>
+        <div class="d-grid gap-2 d-md-flex">
+            <a href="{{ url_for('auth.register') }}" class="btn btn-primary btn-lg px-4">Get Started</a>
+            <a href="{{ url_for('auth.login') }}" class="btn btn-outline-primary btn-lg px-4">Login</a>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card p-4">
+            <h3 class="mb-3">Key Features</h3>
+            <div class="list-group list-group-flush">
+                <div class="list-group-item">
+                    <i class="bi bi-chat-dots text-primary"></i> <strong>Secure Messaging</strong><br>
+                    <small class="text-muted">Stay connected with your therapist between sessions</small>
+                </div>
+                <div class="list-group-item">
+                    <i class="bi bi-journal-text text-success"></i> <strong>Digital Journaling</strong><br>
+                    <small class="text-muted">Track breakthroughs, triggers, and progress</small>
+                </div>
+                <div class="list-group-item">
+                    <i class="bi bi-lightbulb text-warning"></i> <strong>Therapeutic Prompts</strong><br>
+                    <small class="text-muted">Guided exercises from your therapist</small>
+                </div>
+                <div class="list-group-item">
+                    <i class="bi bi-shield-check text-danger"></i> <strong>Crisis Support</strong><br>
+                    <small class="text-muted">24/7 access to emergency resources</small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="alert alert-info mt-5">
+    <h5><i class="bi bi-info-circle"></i> Important Note</h5>
+    <p class="mb-0">MindBridge is designed for clients with an established therapeutic relationship. This platform complements, but does not replace, professional mental health care.</p>
+</div>
+{% endblock %}
+
+
+
+
+
+
+

@@ -1,0 +1,74 @@
+<!-- templates/client/add_trigger.html -->
+{% extends "base.html" %}
+{% block title %}Log Trigger - MindBridge{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-10">
+        <div class="card">
+            <div class="card-header">
+                <h4><i class="bi bi-exclamation-circle text-warning"></i> Document a Trigger</h4>
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <div class="mb-3">
+                        <label for="trigger_description" class="form-label">What triggered you? *</label>
+                        <textarea class="form-control" id="trigger_description" name="trigger_description" rows="4" required></textarea>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="trigger_type" class="form-label">Type of Trigger</label>
+                            <input type="text" class="form-control" id="trigger_type" name="trigger_type" placeholder="e.g., social, environmental, thought-based">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="intensity_level" class="form-label">Intensity Level (1-10) *</label>
+                            <input type="range" class="form-range" id="intensity_level" name="intensity_level" min="1" max="10" value="5" oninput="this.nextElementSibling.textContent = this.value">
+                            <div class="text-center"><strong>5</strong></div>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="physical_symptoms" class="form-label">Physical Symptoms</label>
+                        <textarea class="form-control" id="physical_symptoms" name="physical_symptoms" rows="2" placeholder="e.g., rapid heartbeat, sweating, nausea"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="emotional_response" class="form-label">Emotional Response</label>
+                        <textarea class="form-control" id="emotional_response" name="emotional_response" rows="2" placeholder="How did you feel? (This helps with sentiment analysis)"></textarea>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="coping_strategy_used" class="form-label">Coping Strategy Used</label>
+                            <input type="text" class="form-control" id="coping_strategy_used" name="coping_strategy_used" placeholder="What did you do to cope?">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="coping_effectiveness" class="form-label">Effectiveness (1-10)</label>
+                            <input type="number" class="form-control" id="coping_effectiveness" name="coping_effectiveness" min="1" max="10">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="location" class="form-label">Location</label>
+                            <input type="text" class="form-control" id="location" name="location" placeholder="Where were you?">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="time_of_day" class="form-label">Time of Day</label>
+                            <select class="form-select" id="time_of_day" name="time_of_day">
+                                <option value="">Select...</option>
+                                <option value="morning">Morning</option>
+                                <option value="afternoon">Afternoon</option>
+                                <option value="evening">Evening</option>
+                                <option value="night">Night</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle"></i> <strong>Note:</strong> High-intensity triggers will automatically notify your therapist for support.
+                    </div>
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <a href="{{ url_for('client.triggers') }}" class="btn btn-secondary">Cancel</a>
+                        <button type="submit" class="btn btn-warning">Log Trigger</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

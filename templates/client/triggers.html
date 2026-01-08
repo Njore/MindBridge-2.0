@@ -1,0 +1,116 @@
+<!-- templates/client/triggers.html -->
+{% extends "base.html" %}
+{% block title %}Triggers - MindBridge{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1><i class="bi bi-exclamation-circle text-warning"></i> My Triggers</h1>
+    <a href="{{ url_for('client.add_trigger') }}" class="btn btn-warning">
+        <i class="bi bi-plus-circle"></i> Log Trigger
+    </a>
+</div>
+
+<div class="alert alert-info">
+    <i class="bi bi-info-circle"></i> <strong>Why track triggers?</strong> Understanding your triggers helps identify patterns and develop effective coping strategies. High-intensity triggers automatically notify your therapist.
+</div>
+
+{% if triggers.items %}
+    {% for trigger in triggers.items %}
+    <div class="card mb-3 {% if trigger.intensity_level >= 8 %}border-danger{% endif %}">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-start mb-3">
+                <div class="flex-grow-1">
+                    <div class="mb-2">
+                        {% if trigger.trigger_type %}
+                            <span class="badge bg-secondary">{{ trigger.trigger_type }}</span>
+                        {% endif %}
+                        <span class="badge {% if trigger.intensity_level >= 8 %}bg-danger{% elif trigger.intensity_level >= 5 %}bg-warning{% else %}bg-info{% endif %}">
+                            Intensity: {{ trigger.intensity_level }}/10
+                        </span>
+                        <span class="badge bg-light text-dark">{{ trigger.date_logged.strftime('%B %d, %Y %I:%M %p') }}</span>
+                    </div>
+
+                    <h6>Description:</h6>
+                    <p>{{ trigger.trigger_description }}</p>
+
+                    <div class="row">
+                        {% if trigger.physical_symptoms %}
+                        <div class="col-md-6">
+                            <small class="text-muted"><strong>Physical Symptoms:</strong></small>
+                            <p class="small">{{ trigger.physical_symptoms }}</p>
+                        </div>
+                        {% endif %}
+
+                        {% if trigger.emotional_response %}
+                        <div class="col-md-6">
+                            <small class="text-muted"><strong>Emotional Response:</strong></small>
+                            <p class="small">{{ trigger.emotional_response }}</p>
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    {% if trigger.coping_strategy_used %}
+                    <div class="mt-2">
+                        <small class="text-muted"><strong>Coping Strategy:</strong></small>
+                        <p class="small mb-1">{{ trigger.coping_strategy_used }}</p>
+                        {% if trigger.coping_effectiveness %}
+                            <span class="badge {% if trigger.coping_effectiveness >= 7 %}bg-success{% elif trigger.coping_effectiveness >= 4 %}bg-warning{% else %}bg-danger{% endif %}">
+                                Effectiveness: {{ trigger.coping_effectiveness }}/10
+                            </span>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+
+                    {% if trigger.sentiment_analysis %}
+                    <div class="alert alert-light mt-3 mb-0">
+                        <small><strong><i class="bi bi-graph-up"></i> Sentiment Analysis:</strong></small>
+                        <div class="mt-1">
+                            <span class="badge bg-info">Primary Emotion: {{ trigger.sentiment_analysis.primary_emotion }}</span>
+                            {% if trigger.sentiment_analysis.anxiety_score %}
+                                <span class="badge bg-warning">Anxiety: {{ (trigger.sentiment_analysis.anxiety_score * 100)|round|int }}%</span>
+                            {% endif %}
+                            {% if trigger.sentiment_analysis.crisis_flag %}
+                                <span class="badge bg-danger">Crisis Flag</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+
+    <!-- Pagination -->
+    <nav>
+        <ul class="pagination justify-content-center">
+            {% if triggers.has_prev %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ triggers.prev_num }}">Previous</a>
+                </li>
+            {% endif %}
+
+            {% for page_num in triggers.iter_pages(left_edge=1, right_edge=1, left_current=1, right_current=2) %}
+                {% if page_num %}
+                    <li class="page-item {% if page_num == triggers.page %}active{% endif %}">
+                        <a class="page-link" href="?page={{ page_num }}">{{ page_num }}</a>
+                    </li>
+                {% else %}
+                    <li class="page-item disabled"><span class="page-link">...</span></li>
+                {% endif %}
+            {% endfor %}
+
+            {% if triggers.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ triggers.next_num }}">Next</a>
+                </li>
+            {% endif %}
+        </ul>
+    </nav>
+{% else %}
+    <div class="alert alert-info">
+        <h5><i class="bi bi-info-circle"></i> No triggers logged yet</h5>
+        <p class="mb-0">Start documenting your triggers to help identify patterns and develop coping strategies.</p>
+        <a href="{{ url_for('client.add_trigger') }}" class="btn btn-warning mt-3">Log Your First Trigger</a>
+    </div>
+{% endif %}
+{% endblock %}

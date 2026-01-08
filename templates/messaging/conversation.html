@@ -1,0 +1,65 @@
+<!-- templates/messaging/conversation.html -->
+{% extends "base.html" %}
+{% block title %}Conversation - MindBridge{% endblock %}
+{% block content %}
+<div class="mb-3">
+    <a href="{{ url_for('messaging.inbox') }}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Back to Inbox
+    </a>
+</div>
+
+<div class="card">
+    <div class="card-header bg-primary text-white">
+        <h5 class="mb-0">
+            <i class="bi bi-person-circle"></i> Conversation with {{ other_user.get_full_name() }}
+        </h5>
+    </div>
+    <div class="card-body" style="max-height: 500px; overflow-y: auto;">
+        {% if messages %}
+            {% for message in messages %}
+                <div class="mb-3 {% if message.sender_id == user.user_id %}text-end{% endif %}">
+                    <div class="d-inline-block text-start" style="max-width: 70%;">
+                        <div class="card {% if message.sender_id == user.user_id %}bg-primary text-white{% else %}bg-light{% endif %}">
+                            <div class="card-body p-3">
+                                {% if message.subject %}
+                                    <h6 class="card-title">{{ message.subject }}</h6>
+                                {% endif %}
+                                <p class="card-text mb-1">{{ message.content }}</p>
+                                <small class="{% if message.sender_id == user.user_id %}text-white-50{% else %}text-muted{% endif %}">
+                                    {{ message.created_at.strftime('%b %d, %Y %I:%M %p') }}
+                                    {% if message.message_type %}
+                                        | <span class="badge {% if message.sender_id == user.user_id %}bg-light text-dark{% else %}bg-secondary{% endif %}">
+                                            {{ message.message_type.value }}
+                                        </span>
+                                    {% endif %}
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            {% endfor %}
+        {% else %}
+            <p class="text-muted text-center">No messages yet. Start the conversation!</p>
+        {% endif %}
+    </div>
+    <div class="card-footer">
+        <form method="POST" action="{{ url_for('messaging.send_message') }}">
+            <input type="hidden" name="recipient_id" value="{{ other_user.user_id }}">
+            <div class="mb-2">
+                <select class="form-select form-select-sm" name="message_type">
+                    <option value="general">General Message</option>
+                    <option value="progress_update">Progress Update</option>
+                    <option value="breakthrough">Breakthrough</option>
+                    <option value="trigger_documentation">Trigger Documentation</option>
+                </select>
+            </div>
+            <div class="input-group">
+                <textarea class="form-control" name="content" rows="2" placeholder="Type your message..." required></textarea>
+                <button class="btn btn-primary" type="submit">
+                    <i class="bi bi-send-fill"></i> Send
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

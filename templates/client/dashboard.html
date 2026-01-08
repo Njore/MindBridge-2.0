@@ -1,0 +1,537 @@
+{% extends "base.html" %}
+
+{% block title %}Client Dashboard - MindBridge{% endblock %}
+
+{% block extra_css %}
+<style>
+    .welcome-section {
+        background: white;
+        border-radius: 12px;
+        padding: 2.5rem;
+        margin-bottom: 2rem;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        border: 1px solid #e2e8f0;
+    }
+
+    .welcome-section h2 {
+        color: #1e293b;
+        font-weight: 700;
+        margin-bottom: 0.5rem;
+    }
+
+    .quick-actions {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1.5rem;
+        margin-bottom: 2rem;
+    }
+
+    .action-card {
+        background: white;
+        border: 2px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 1.5rem;
+        text-align: center;
+        transition: all 0.3s ease;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        cursor: pointer;
+        text-decoration: none;
+        color: inherit;
+        display: block;
+    }
+
+    .action-card:hover {
+        border-color: var(--primary-color);
+        box-shadow: 0 4px 12px rgba(99, 102, 241, 0.1);
+        color: inherit;
+    }
+
+    .action-card i {
+        font-size: 2.5rem;
+        margin-bottom: 1rem;
+        display: block;
+    }
+
+    .action-card.breakthrough-action i {
+        color: #f59e0b;
+    }
+
+    .action-card.trigger-action i {
+        color: #ef4444;
+    }
+
+    .action-card.journal-action i {
+        color: #8b5cf6;
+    }
+
+    .action-card.crisis-action i {
+        color: #dc2626;
+    }
+
+    .action-card h5 {
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+        font-size: 1.1rem;
+    }
+
+    .action-card p {
+        color: #64748b;
+        margin: 0;
+        font-size: 0.875rem;
+    }
+
+    .section-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+    }
+
+    .section-header h4 {
+        font-weight: 700;
+        color: #1e293b;
+        margin: 0;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .section-header h4 i {
+        font-size: 1.5rem;
+    }
+
+    .empty-state {
+        text-align: center;
+        padding: 3rem 2rem;
+        color: #64748b;
+    }
+
+    .empty-state i {
+        font-size: 4rem;
+        color: #cbd5e1;
+        margin-bottom: 1rem;
+    }
+
+    .empty-state h5 {
+        color: #475569;
+        margin-bottom: 0.5rem;
+    }
+
+    .item-card {
+        background: white;
+        border-radius: 12px;
+        padding: 1.25rem;
+        margin-bottom: 1rem;
+        transition: all 0.3s ease;
+        border-left: 4px solid transparent;
+    }
+
+    .item-card:hover {
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    }
+
+    .item-card.breakthrough-item {
+        border-left-color: #f59e0b;
+    }
+
+    .item-card.trigger-item {
+        border-left-color: #ef4444;
+    }
+
+    .item-card.prompt-item {
+        border-left-color: #8b5cf6;
+    }
+
+    .item-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: start;
+        margin-bottom: 0.75rem;
+    }
+
+    .item-title {
+        font-weight: 600;
+        color: #1e293b;
+        margin-bottom: 0.25rem;
+    }
+
+    .item-meta {
+        font-size: 0.875rem;
+        color: #64748b;
+    }
+
+    .intensity-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        padding: 0.25rem 0.75rem;
+        border-radius: 6px;
+        font-size: 0.875rem;
+        font-weight: 600;
+    }
+
+    .intensity-high {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+
+    .intensity-medium {
+        background: #fef3c7;
+        color: #92400e;
+    }
+
+    .intensity-low {
+        background: #dcfce7;
+        color: #166534;
+    }
+
+    .therapist-card {
+        background: #6366f1;
+        color: white;
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin-bottom: 2rem;
+        box-shadow: 0 2px 8px rgba(99, 102, 241, 0.2);
+    }
+
+    .therapist-card h5 {
+        font-weight: 700;
+        margin-bottom: 0.5rem;
+    }
+
+    .therapist-card p {
+        opacity: 0.9;
+        margin: 0;
+    }
+
+    .no-therapist-card {
+        background: #f59e0b;
+        color: white;
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin-bottom: 2rem;
+        text-align: center;
+    }
+
+    .notification-item {
+        background: white;
+        border-radius: 12px;
+        padding: 1rem;
+        margin-bottom: 0.75rem;
+        display: flex;
+        align-items: start;
+        gap: 1rem;
+        transition: all 0.3s ease;
+    }
+
+    .notification-item:hover {
+        background: #f8fafc;
+    }
+
+    .notification-icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.25rem;
+        flex-shrink: 0;
+    }
+
+    .notification-icon.info {
+        background: #dbeafe;
+        color: #1e40af;
+    }
+
+    .notification-icon.success {
+        background: #dcfce7;
+        color: #166534;
+    }
+
+    .notification-icon.warning {
+        background: #fef3c7;
+        color: #92400e;
+    }
+
+    @media (max-width: 768px) {
+        .welcome-section {
+            padding: 1.5rem;
+        }
+
+        .quick-actions {
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1rem;
+        }
+
+        .action-card i {
+            font-size: 2rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Welcome Section -->
+<div class="welcome-section">
+    <h2>Welcome back, {{ user.first_name }}! 👋</h2>
+    <p class="lead text-muted mb-0">Here's your therapeutic journey at a glance</p>
+</div>
+
+<!-- Therapist Connection Status -->
+{% if relationship %}
+<div class="therapist-card">
+    <div class="d-flex align-items-center justify-content-between">
+        <div>
+            <h5><i class="bi bi-person-heart"></i> Connected with {{ relationship.therapist_user.get_full_name() }}</h5>
+            <p class="mb-0">Your therapeutic relationship is active</p>
+        </div>
+        <a href="{{ url_for('messaging.conversation', other_user_id=relationship.therapist_id) }}"
+           class="btn btn-light btn-sm">
+            <i class="bi bi-envelope-fill"></i> Message
+        </a>
+    </div>
+</div>
+{% else %}
+<div class="no-therapist-card">
+    <i class="bi bi-exclamation-circle-fill" style="font-size: 3rem; margin-bottom: 1rem;"></i>
+    <h5>No Active Therapist Connection</h5>
+    <p class="mb-3">Connect with a therapist to unlock all features</p>
+    <a href="{{ url_for('client.search_therapists') }}" class="btn btn-light">
+        <i class="bi bi-search"></i> Find a Therapist
+    </a>
+</div>
+{% endif %}
+
+<!-- Quick Actions -->
+<div class="quick-actions">
+    <a href="{{ url_for('client.add_breakthrough') }}" class="action-card breakthrough-action">
+        <i class="bi bi-star-fill"></i>
+        <h5>Log Breakthrough</h5>
+        <p>Celebrate your progress</p>
+    </a>
+
+    <a href="{{ url_for('client.add_trigger') }}" class="action-card trigger-action">
+        <i class="bi bi-lightning-fill"></i>
+        <h5>Document Trigger</h5>
+        <p>Track patterns & responses</p>
+    </a>
+
+    <a href="{{ url_for('client.add_journal_entry') }}" class="action-card journal-action">
+        <i class="bi bi-journal-text"></i>
+        <h5>Write Journal</h5>
+        <p>Reflect on your day</p>
+    </a>
+
+    <a href="{{ url_for('crisis.index') }}" class="action-card crisis-action">
+        <i class="bi bi-shield-fill-exclamation"></i>
+        <h5>Crisis Support</h5>
+        <p>Get immediate help</p>
+    </a>
+</div>
+
+<div class="row">
+    <!-- Left Column -->
+    <div class="col-lg-8">
+        <!-- Recent Breakthroughs -->
+        <div class="card">
+            <div class="card-header">
+                <div class="section-header">
+                    <h4><i class="bi bi-star-fill"></i> Recent Breakthroughs</h4>
+                    <a href="{{ url_for('client.breakthroughs') }}" class="btn btn-sm btn-light">
+                        View All <i class="bi bi-arrow-right"></i>
+                    </a>
+                </div>
+            </div>
+            <div class="card-body">
+                {% if recent_breakthroughs %}
+                    {% for breakthrough in recent_breakthroughs %}
+                    <div class="item-card breakthrough-item">
+                        <div class="item-header">
+                            <div>
+                                <div class="item-title">{{ breakthrough.title }}</div>
+                                <div class="item-meta">
+                                    <i class="bi bi-calendar-event"></i>
+                                    {{ breakthrough.date_occurred.strftime('%B %d, %Y') if breakthrough.date_occurred else 'Not specified' }}
+                                </div>
+                            </div>
+                            <span class="badge bg-warning">
+                                {{ breakthrough.impact_level.value.title() }}
+                            </span>
+                        </div>
+                        <p class="text-muted mb-2" style="font-size: 0.9rem;">
+                            {{ breakthrough.description[:150] }}{% if breakthrough.description|length > 150 %}...{% endif %}
+                        </p>
+                        {% if breakthrough.is_shared_with_therapist %}
+                        <small class="text-success">
+                            <i class="bi bi-check-circle-fill"></i> Shared with therapist
+                        </small>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                {% else %}
+                <div class="empty-state">
+                    <i class="bi bi-star"></i>
+                    <h5>No Breakthroughs Yet</h5>
+                    <p>Start documenting your achievements and progress</p>
+                    <a href="{{ url_for('client.add_breakthrough') }}" class="btn btn-primary mt-2">
+                        <i class="bi bi-plus-circle"></i> Add Your First Breakthrough
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Recent Triggers -->
+        <div class="card">
+            <div class="card-header">
+                <div class="section-header">
+                    <h4><i class="bi bi-lightning-fill"></i> Recent Triggers</h4>
+                    <a href="{{ url_for('client.triggers') }}" class="btn btn-sm btn-light">
+                        View All <i class="bi bi-arrow-right"></i>
+                    </a>
+                </div>
+            </div>
+            <div class="card-body">
+                {% if recent_triggers %}
+                    {% for trigger in recent_triggers %}
+                    <div class="item-card trigger-item">
+                        <div class="item-header">
+                            <div>
+                                <div class="item-title">{{ trigger.trigger_type or 'Trigger Event' }}</div>
+                                <div class="item-meta">
+                                    <i class="bi bi-clock"></i>
+                                    {{ trigger.date_logged.strftime('%B %d, %Y at %I:%M %p') }}
+                                </div>
+                            </div>
+                            {% if trigger.intensity_level >= 7 %}
+                            <span class="intensity-badge intensity-high">
+                                <i class="bi bi-exclamation-triangle-fill"></i> High
+                            </span>
+                            {% elif trigger.intensity_level >= 4 %}
+                            <span class="intensity-badge intensity-medium">
+                                <i class="bi bi-dash-circle-fill"></i> Medium
+                            </span>
+                            {% else %}
+                            <span class="intensity-badge intensity-low">
+                                <i class="bi bi-check-circle-fill"></i> Low
+                            </span>
+                            {% endif %}
+                        </div>
+                        <p class="text-muted mb-0" style="font-size: 0.9rem;">
+                            {{ trigger.trigger_description[:100] }}{% if trigger.trigger_description|length > 100 %}...{% endif %}
+                        </p>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                <div class="empty-state">
+                    <i class="bi bi-lightning"></i>
+                    <h5>No Triggers Logged</h5>
+                    <p>Track your triggers to identify patterns and improve coping</p>
+                    <a href="{{ url_for('client.add_trigger') }}" class="btn btn-primary mt-2">
+                        <i class="bi bi-plus-circle"></i> Log Your First Trigger
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Column -->
+    <div class="col-lg-4">
+        <!-- Pending Prompts -->
+        <div class="card">
+            <div class="card-header">
+                <h4><i class="bi bi-lightbulb-fill"></i> Pending Prompts</h4>
+            </div>
+            <div class="card-body">
+                {% if pending_prompts %}
+                    {% for prompt in pending_prompts %}
+                    <div class="item-card prompt-item">
+                        <div class="item-title">{{ prompt.title }}</div>
+                        <div class="item-meta mb-2">
+                            <i class="bi bi-tag"></i> {{ prompt.prompt_type.replace('_', ' ').title() }}
+                        </div>
+                        {% if prompt.deadline_date %}
+                        <div class="mb-2">
+                            <small class="{% if prompt.is_overdue() %}text-danger{% else %}text-muted{% endif %}">
+                                <i class="bi bi-calendar-event"></i>
+                                Due: {{ prompt.deadline_date.strftime('%B %d, %Y') }}
+                            </small>
+                        </div>
+                        {% endif %}
+                        <a href="{{ url_for('client.respond_to_prompt', prompt_id=prompt.prompt_id) }}"
+                           class="btn btn-sm btn-primary w-100">
+                            <i class="bi bi-pencil-fill"></i> Respond Now
+                        </a>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                <div class="empty-state" style="padding: 2rem 1rem;">
+                    <i class="bi bi-lightbulb" style="font-size: 3rem;"></i>
+                    <h5 style="font-size: 1rem;">No Pending Prompts</h5>
+                    <p style="font-size: 0.875rem;">Check back later for new therapeutic exercises</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Notifications -->
+        <div class="card">
+            <div class="card-header">
+                <h4><i class="bi bi-bell-fill"></i> Notifications</h4>
+            </div>
+            <div class="card-body">
+                {% if unread_notifications %}
+                    {% for notification in unread_notifications %}
+                    <div class="notification-item">
+                        <div class="notification-icon {% if notification.notification_type == 'crisis_alert' %}warning{% elif notification.notification_type == 'new_message' %}info{% else %}success{% endif %}">
+                            {% if notification.notification_type == 'crisis_alert' %}
+                            <i class="bi bi-exclamation-triangle-fill"></i>
+                            {% elif notification.notification_type == 'new_message' %}
+                            <i class="bi bi-envelope-fill"></i>
+                            {% else %}
+                            <i class="bi bi-info-circle-fill"></i>
+                            {% endif %}
+                        </div>
+                        <div style="flex: 1;">
+                            <div style="font-weight: 600; color: #1e293b; font-size: 0.9rem;">
+                                {{ notification.title }}
+                            </div>
+                            <div style="font-size: 0.85rem; color: #64748b;">
+                                {{ notification.message }}
+                            </div>
+                            <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 0.25rem;">
+                                {{ notification.created_at.strftime('%B %d at %I:%M %p') }}
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                <div class="empty-state" style="padding: 2rem 1rem;">
+                    <i class="bi bi-bell" style="font-size: 3rem;"></i>
+                    <h5 style="font-size: 1rem;">All Caught Up!</h5>
+                    <p style="font-size: 0.875rem;">No new notifications</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Quick Stats -->
+        <div class="row g-3">
+            <div class="col-6">
+                <div class="stat-card">
+                    <h3 style="color: #f59e0b;">{{ recent_breakthroughs|length }}</h3>
+                    <p>Breakthroughs</p>
+                </div>
+            </div>
+            <div class="col-6">
+                <div class="stat-card">
+                    <h3 style="color: #ef4444;">{{ recent_triggers|length }}</h3>
+                    <p>Triggers Logged</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

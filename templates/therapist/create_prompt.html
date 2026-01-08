@@ -1,0 +1,79 @@
+<!-- templates/therapist/create_prompt.html -->
+{% extends "base.html" %}
+{% block title %}Create Prompt - MindBridge{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h4><i class="bi bi-lightbulb"></i> Create Therapeutic Prompt</h4>
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <div class="mb-3">
+                        <label for="relationship_id" class="form-label">Select Client *</label>
+                        <select class="form-select" id="relationship_id" name="relationship_id" required>
+                            <option value="">Choose a client...</option>
+                            {% for rel in relationships %}
+                            <option value="{{ rel.relationship_id }}">{{ rel.client_user.get_full_name() }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="prompt_type" class="form-label">Prompt Type *</label>
+                        <select class="form-select" id="prompt_type" name="prompt_type" required>
+                            <option value="">Select type...</option>
+                            <option value="gratitude">Gratitude Exercise</option>
+                            <option value="shadow_work">Shadow Work</option>
+                            <option value="inner_child">Inner Child Work</option>
+                            <option value="mindfulness">Mindfulness Practice</option>
+                            <option value="cognitive_reframing">Cognitive Reframing</option>
+                            <option value="self_compassion">Self-Compassion</option>
+                            <option value="values_clarification">Values Clarification</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="title" class="form-label">Title *</label>
+                        <input type="text" class="form-control" id="title" name="title" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="description" class="form-label">Brief Description</label>
+                        <textarea class="form-control" id="description" name="description" rows="2"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="prompt_content" class="form-label">Prompt Content *</label>
+                        <textarea class="form-control" id="prompt_content" name="prompt_content" rows="6" required placeholder="The main prompt or question for your client..."></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="instructions" class="form-label">Instructions</label>
+                        <textarea class="form-control" id="instructions" name="instructions" rows="3" placeholder="Additional guidance on how to complete this exercise..."></textarea>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="expected_duration_minutes" class="form-label">Expected Duration (minutes)</label>
+                            <input type="number" class="form-control" id="expected_duration_minutes" name="expected_duration_minutes" min="5" max="120">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="deadline_date" class="form-label">Deadline (Optional)</label>
+                            <input type="date" class="form-control" id="deadline_date" name="deadline_date">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="frequency" class="form-label">Frequency</label>
+                        <select class="form-select" id="frequency" name="frequency">
+                            <option value="once">One-time</option>
+                            <option value="daily">Daily</option>
+                            <option value="weekly">Weekly</option>
+                        </select>
+                    </div>
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <a href="{{ url_for('therapist.dashboard') }}" class="btn btn-secondary">Cancel</a>
+                        <button type="submit" class="btn btn-primary">Send Prompt to Client</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

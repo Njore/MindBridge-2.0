@@ -1,0 +1,139 @@
+<!-- templates/crisis/resources.html -->
+{% extends "base.html" %}
+{% block title %}Crisis Resources - MindBridge{% endblock %}
+{% block content %}
+<div class="crisis-banner">
+    <h2><i class="bi bi-telephone-fill"></i> Emergency Crisis Resources</h2>
+    <p class="mb-0">If you're in immediate danger, call <strong>911</strong> or go to your nearest emergency room.</p>
+</div>
+
+<div class="alert alert-warning">
+    <h5><i class="bi bi-exclamation-triangle"></i> When to Seek Emergency Help</h5>
+    <ul class="mb-0">
+        <li>Thoughts of harming yourself or others</li>
+        <li>Severe panic or anxiety that feels unmanageable</li>
+        <li>Complete loss of contact with reality</li>
+        <li>Any situation where you feel unsafe</li>
+    </ul>
+</div>
+
+{% for resource_type, resources in resources_by_type.items() %}
+<div class="card mb-4">
+    <div class="card-header bg-primary text-white">
+        <h4 class="mb-0">
+            {% if resource_type == 'hotline' %}
+                <i class="bi bi-telephone-fill"></i> Crisis Hotlines
+            {% elif resource_type == 'crisis_text' %}
+                <i class="bi bi-chat-dots-fill"></i> Crisis Text Lines
+            {% elif resource_type == 'emergency_service' %}
+                <i class="bi bi-hospital-fill"></i> Emergency Services
+            {% else %}
+                <i class="bi bi-info-circle-fill"></i> {{ resource_type.replace('_', ' ').title() }}
+            {% endif %}
+        </h4>
+    </div>
+    <div class="card-body">
+        {% for resource in resources %}
+        <div class="card mb-3">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div class="flex-grow-1">
+                        <h5 class="card-title">{{ resource.resource_name }}</h5>
+                        <p class="card-text">{{ resource.description }}</p>
+
+                        <div class="row">
+                            {% if resource.phone_number %}
+                            <div class="col-md-6 mb-2">
+                                <strong>Phone:</strong>
+                                <a href="tel:{{ resource.phone_number }}" class="text-decoration-none">
+                                    <span class="fs-4 text-danger">{{ resource.phone_number }}</span>
+                                </a>
+                                <br>
+                                <a href="tel:{{ resource.phone_number }}" class="btn btn-danger mt-2">
+                                    <i class="bi bi-telephone-fill"></i> Call Now
+                                </a>
+                            </div>
+                            {% endif %}
+
+                            {% if resource.text_number %}
+                            <div class="col-md-6 mb-2">
+                                <strong>Text:</strong>
+                                <span class="fs-4 text-warning">{{ resource.text_number }}</span>
+                                <br>
+                                <a href="sms:{{ resource.text_number }}&body=HELLO" class="btn btn-warning mt-2">
+                                    <i class="bi bi-chat-dots-fill"></i> Text Now
+                                </a>
+                            </div>
+                            {% endif %}
+                        </div>
+
+                        {% if resource.website_url %}
+                        <p class="mt-2">
+                            <strong>Website:</strong>
+                            <a href="{{ resource.website_url }}" target="_blank" rel="noopener">
+                                {{ resource.website_url }} <i class="bi bi-box-arrow-up-right"></i>
+                            </a>
+                        </p>
+                        {% endif %}
+
+                        {% if resource.email %}
+                        <p><strong>Email:</strong> {{ resource.email }}</p>
+                        {% endif %}
+
+                        <div class="mt-3">
+                            {% if resource.available_24_7 %}
+                                <span class="badge bg-success">24/7 Available</span>
+                            {% endif %}
+
+                            {% if resource.languages_supported %}
+                                <span class="badge bg-info">
+                                    Languages: {{ resource.languages_supported|join(', ')|upper }}
+                                </span>
+                            {% endif %}
+
+                            {% if resource.geographical_availability %}
+                                <span class="badge bg-secondary">{{ resource.geographical_availability }}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endfor %}
+
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0"><i class="bi bi-heart-pulse"></i> Additional Support</h5>
+    </div>
+    <div class="card-body">
+        <p>Remember, you can also:</p>
+        <ul>
+            <li>Contact your therapist through the secure messaging system</li>
+            <li>Use our <a href="{{ url_for('crisis.techniques') }}">de-escalation techniques</a> for immediate relief</li>
+            <li>Log a crisis event to track patterns and get appropriate support</li>
+            <li>Reach out to trusted friends or family members</li>
+        </ul>
+
+        <div class="d-grid gap-2 d-md-flex">
+            <a href="{{ url_for('crisis.techniques') }}" class="btn btn-primary">
+                <i class="bi bi-heart-pulse"></i> View De-escalation Techniques
+            </a>
+            {% if session.get('user_type') == 'client' %}
+            <a href="{{ url_for('crisis.log_crisis_event') }}" class="btn btn-warning">
+                <i class="bi bi-clipboard-check"></i> Log Crisis Event
+            </a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+
+
+
+
+
+

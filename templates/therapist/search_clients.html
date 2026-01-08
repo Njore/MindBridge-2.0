@@ -1,0 +1,148 @@
+<!-- templates/therapist/search_clients.html -->
+{% extends "base.html" %}
+{% block title %}Search Clients - MindBridge{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-10 mx-auto">
+        <h2 class="mb-4"><i class="bi bi-search"></i> Search for Clients</h2>
+
+        <div class="card mb-4">
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('therapist.search_clients') }}">
+                    <div class="input-group">
+                        <input type="text"
+                               class="form-control form-control-lg"
+                               name="search_query"
+                               placeholder="Search by name or email..."
+                               value="{{ search_query }}"
+                               required>
+                        <button class="btn btn-primary btn-lg" type="submit">
+                            <i class="bi bi-search"></i> Search
+                        </button>
+                    </div>
+                    <small class="text-muted mt-2 d-block">
+                        Enter the client's name or email address to find them in the system
+                    </small>
+                </form>
+            </div>
+        </div>
+
+        {% if search_query %}
+            {% if search_results %}
+                <div class="alert alert-success">
+                    <i class="bi bi-check-circle"></i> Found {{ search_results|length }} client(s) matching "{{ search_query }}"
+                </div>
+
+                <div class="row">
+                    {% for client in search_results %}
+                    <div class="col-md-6 mb-3">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-start mb-3">
+                                    <div>
+                                        <h5 class="card-title mb-1">
+                                            <i class="bi bi-person-circle"></i> {{ client.get_full_name() }}
+                                        </h5>
+                                        <p class="text-muted small mb-0">
+                                            <i class="bi bi-envelope"></i> {{ client.email }}
+                                        </p>
+                                        {% if client.phone %}
+                                        <p class="text-muted small mb-0">
+                                            <i class="bi bi-telephone"></i> {{ client.phone }}
+                                        </p>
+                                        {% endif %}
+                                    </div>
+                                    <span class="badge bg-success">Available</span>
+                                </div>
+
+                                {% if client.bio %}
+                                <div class="mb-3">
+                                    <small class="text-muted"><strong>About:</strong></small>
+                                    <p class="small mb-0">{{ client.bio[:100] }}{% if client.bio|length > 100 %}...{% endif %}</p>
+                                </div>
+                                {% endif %}
+
+                                <div class="mb-3">
+                                    <small class="text-muted">
+                                        <i class="bi bi-calendar"></i> Member since {{ client.created_at.strftime('%B %Y') }}
+                                    </small>
+                                </div>
+
+                                <div class="d-grid">
+                                    <a href="{{ url_for('therapist.connect_client', client_id=client.user_id) }}"
+                                       class="btn btn-primary">
+                                        <i class="bi bi-person-plus"></i> Connect with Client
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    <strong>No clients found matching "{{ search_query }}"</strong>
+                    <p class="mb-0 mt-2">
+                        Possible reasons:
+                    </p>
+                    <ul class="mb-0">
+                        <li>The client hasn't registered yet</li>
+                        <li>The email or name is spelled differently</li>
+                        <li>You're already connected with this client</li>
+                    </ul>
+                </div>
+
+                <div class="card">
+                    <div class="card-body">
+                        <h5><i class="bi bi-lightbulb"></i> Suggestions</h5>
+                        <ul>
+                            <li>Double-check the spelling of the name or email</li>
+                            <li>Ask the client to register at <a href="{{ url_for('auth.register') }}">{{ url_for('auth.register', _external=True) }}</a></li>
+                            <li>Make sure the client registered with their correct email address</li>
+                            <li>Try searching with just their first or last name</li>
+                        </ul>
+                    </div>
+                </div>
+            {% endif %}
+        {% else %}
+            <div class="card">
+                <div class="card-body text-center py-5">
+                    <i class="bi bi-search" style="font-size: 3rem; color: #ccc;"></i>
+                    <h5 class="mt-3">Search for Your Clients</h5>
+                    <p class="text-muted">
+                        Enter a client's name or email address above to connect with them on MindBridge
+                    </p>
+                </div>
+            </div>
+
+            <div class="card mt-3">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-info-circle"></i> How to Connect with Clients</h5>
+                </div>
+                <div class="card-body">
+                    <ol>
+                        <li><strong>Client Registration:</strong> Make sure your client has registered on MindBridge</li>
+                        <li><strong>Get Their Email:</strong> Ask your client for the exact email they used to register</li>
+                        <li><strong>Search:</strong> Use the search box above to find them by name or email</li>
+                        <li><strong>Connect:</strong> Click "Connect with Client" to establish the therapeutic relationship</li>
+                        <li><strong>Start Using:</strong> Once connected, you can exchange messages, send prompts, and monitor progress</li>
+                    </ol>
+
+                    <div class="alert alert-warning mt-3 mb-0">
+                        <i class="bi bi-shield-check"></i>
+                        <strong>Important:</strong> Only connect with clients you have an established therapeutic relationship with in real life.
+                    </div>
+                </div>
+            </div>
+        {% endif %}
+
+        <div class="text-center mt-4">
+            <a href="{{ url_for('therapist.clients') }}" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left"></i> Back to My Clients
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}

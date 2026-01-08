@@ -1,0 +1,58 @@
+<!-- templates/messaging/inbox.html -->
+{% extends "base.html" %}
+{% block title %}Messages - MindBridge{% endblock %}
+{% block content %}
+<h1 class="mb-4"><i class="bi bi-envelope-fill"></i> Messages</h1>
+
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0">Conversations</h5>
+    </div>
+    <div class="card-body">
+        {% if conversations %}
+            <div class="list-group">
+                {% for other_user_id, conversation in conversations.items() %}
+                <a href="{{ url_for('messaging.conversation', other_user_id=other_user_id) }}"
+                   class="list-group-item list-group-item-action {% if conversation.unread_count > 0 %}bg-light{% endif %}">
+                    <div class="d-flex w-100 justify-content-between">
+                        <div>
+                            <h6 class="mb-1">
+                                <i class="bi bi-person-circle"></i> {{ conversation.other_user.get_full_name() }}
+                                {% if conversation.unread_count > 0 %}
+                                    <span class="badge bg-danger">{{ conversation.unread_count }}</span>
+                                {% endif %}
+                            </h6>
+                            {% if conversation.last_message %}
+                                <p class="mb-1 text-muted small">
+                                    {% if conversation.last_message.message_type %}
+                                        <span class="badge bg-secondary">{{ conversation.last_message.message_type.value }}</span>
+                                    {% endif %}
+                                    {{ conversation.last_message.content[:100] }}{% if conversation.last_message.content|length > 100 %}...{% endif %}
+                                </p>
+                            {% endif %}
+                        </div>
+                        <small class="text-muted">
+                            {% if conversation.last_message %}
+                                {{ conversation.last_message.created_at.strftime('%b %d, %Y %I:%M %p') }}
+                            {% endif %}
+                        </small>
+                    </div>
+                </a>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="text-center py-5">
+                <i class="bi bi-envelope text-muted" style="font-size: 4rem;"></i>
+                <h4 class="mt-3 text-muted">No conversations yet</h4>
+                <p class="text-muted">Start a conversation with your therapist or client</p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+
+
+
+
+

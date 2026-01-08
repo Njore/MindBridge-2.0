@@ -1,0 +1,225 @@
+<!-- templates/therapist/client_detail.html -->
+{% extends "base.html" %}
+{% block title %}{{ client.get_full_name() }} - MindBridge{% endblock %}
+{% block content %}
+<div class="mb-3">
+    <a href="{{ url_for('therapist.clients') }}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Back to Clients
+    </a>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header bg-primary text-white">
+        <div class="d-flex justify-content-between align-items-center">
+            <h4 class="mb-0"><i class="bi bi-person-circle"></i> {{ client.get_full_name() }}</h4>
+            <span class="badge bg-light text-dark">{{ relationship.status.value.title() }}</span>
+        </div>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-6">
+                <p><strong>Email:</strong> {{ client.email }}</p>
+                {% if client.phone %}
+                <p><strong>Phone:</strong> {{ client.phone }}</p>
+                {% endif %}
+                <p><strong>Relationship Started:</strong> {{ relationship.relationship_start_date.strftime('%B %d, %Y') }}</p>
+            </div>
+            <div class="col-md-6">
+                {% if relationship.client_goals %}
+                <p><strong>Client Goals:</strong></p>
+                <p class="text-muted">{{ relationship.client_goals }}</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="d-grid gap-2 d-md-flex mt-3">
+            <a href="{{ url_for('messaging.conversation', other_user_id=client.user_id) }}"
+               class="btn btn-primary">
+                <i class="bi bi-envelope"></i> Send Message
+            </a>
+            <a href="{{ url_for('therapist.create_prompt') }}?client_id={{ client.user_id }}"
+               class="btn btn-outline-primary">
+                <i class="bi bi-lightbulb"></i> Send Prompt
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- Tabs for different sections -->
+<ul class="nav nav-tabs mb-3" id="clientDetailTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="breakthroughs-tab" data-bs-toggle="tab"
+                data-bs-target="#breakthroughs" type="button">
+            Breakthroughs ({{ breakthroughs|length }})
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="triggers-tab" data-bs-toggle="tab"
+                data-bs-target="#triggers" type="button">
+            Triggers ({{ triggers|length }})
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="journal-tab" data-bs-toggle="tab"
+                data-bs-target="#journal" type="button">
+            Journal ({{ journal_entries|length }})
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="prompts-tab" data-bs-toggle="tab"
+                data-bs-target="#prompts" type="button">
+            Prompts ({{ prompts|length }})
+        </button>
+    </li>
+</ul>
+
+<div class="tab-content" id="clientDetailTabContent">
+    <!-- Breakthroughs Tab -->
+    <div class="tab-pane fade show active" id="breakthroughs" role="tabpanel">
+        {% if breakthroughs %}
+            {% for breakthrough in breakthroughs %}
+            <div class="card mb-3">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div class="flex-grow-1">
+                            <h6>{{ breakthrough.title }}</h6>
+                            <p>{{ breakthrough.description }}</p>
+                            <div>
+                                <span class="badge bg-success">{{ breakthrough.impact_level.value }}</span>
+                                <span class="badge bg-secondary">{{ breakthrough.date_occurred.strftime('%B %d, %Y') }}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {% if not breakthrough.therapist_response %}
+                    <hr>
+                    <form method="POST" action="{{ url_for('therapist.respond_to_breakthrough', breakthrough_id=breakthrough.breakthrough_id) }}">
+                        <div class="mb-2">
+                            <label class="form-label small">Your Response:</label>
+                            <textarea class="form-control form-control-sm" name="response" rows="3"
+                                      placeholder="Provide feedback or acknowledgment..." required></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-sm">Send Response</button>
+                    </form>
+                    {% else %}
+                    <hr>
+                    <div class="alert alert-info mb-0">
+                        <small><strong>Your Response:</strong></small>
+                        <p class="mb-0">{{ breakthrough.therapist_response }}</p>
+                        <small class="text-muted">{{ breakthrough.therapist_response_date.strftime('%B %d, %Y') }}</small>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <p class="text-muted">No breakthroughs shared yet.</p>
+        {% endif %}
+    </div>
+
+    <!-- Triggers Tab -->
+    <div class="tab-pane fade" id="triggers" role="tabpanel">
+        {% if triggers %}
+            {% for trigger in triggers %}
+            <div class="card mb-3 {% if trigger.intensity_level >= 8 %}border-danger{% endif %}">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <div>
+                            <span class="badge {% if trigger.intensity_level >= 8 %}bg-danger{% elif trigger.intensity_level >= 5 %}bg-warning{% else %}bg-info{% endif %}">
+                                Intensity: {{ trigger.intensity_level }}/10
+                            </span>
+                            {% if trigger.trigger_type %}
+                                <span class="badge bg-secondary">{{ trigger.trigger_type }}</span>
+                            {% endif %}
+                            {% if trigger.sentiment_analysis and trigger.sentiment_analysis.crisis_flag %}
+                                <span class="badge bg-danger"><i class="bi bi-exclamation-triangle-fill"></i> Crisis Alert</span>
+                            {% endif %}
+                        </div>
+                        <small class="text-muted">{{ trigger.date_logged.strftime('%b %d, %Y %I:%M %p') }}</small>
+                    </div>
+
+                    <p>{{ trigger.trigger_description }}</p>
+
+                    <a href="{{ url_for('therapist.view_trigger', trigger_id=trigger.trigger_id) }}"
+                       class="btn btn-sm btn-outline-primary">
+                        View Full Details
+                    </a>
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <p class="text-muted">No triggers logged yet.</p>
+        {% endif %}
+    </div>
+
+    <!-- Journal Tab -->
+    <div class="tab-pane fade" id="journal" role="tabpanel">
+        {% if journal_entries %}
+            {% for note in journal_entries %}
+            <div class="card mb-3">
+                <div class="card-header">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            {% if note.title %}{{ note.title }}{% else %}Journal Entry{% endif %}
+                        </div>
+                        <small class="text-muted">{{ note.created_at.strftime('%B %d, %Y') }}</small>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <p style="white-space: pre-wrap;">{{ note.content }}</p>
+
+                    {% if not note.therapist_feedback %}
+                    <hr>
+                    <form method="POST" action="{{ url_for('therapist.review_journal_entry', note_id=note.note_id) }}">
+                        <div class="mb-2">
+                            <label class="form-label small">Your Feedback:</label>
+                            <textarea class="form-control form-control-sm" name="feedback" rows="3"
+                                      placeholder="Provide feedback..." required></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-sm">Submit Feedback</button>
+                    </form>
+                    {% else %}
+                    <hr>
+                    <div class="alert alert-info mb-0">
+                        <small><strong>Your Feedback:</strong></small>
+                        <p class="mb-0">{{ note.therapist_feedback }}</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <p class="text-muted">No journal entries shared yet.</p>
+        {% endif %}
+    </div>
+
+    <!-- Prompts Tab -->
+    <div class="tab-pane fade" id="prompts" role="tabpanel">
+        {% if prompts %}
+            {% for prompt in prompts %}
+            <div class="card mb-3">
+                <div class="card-header">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h6 class="mb-0">{{ prompt.title }}</h6>
+                        <span class="badge bg-info">{{ prompt.prompt_type }}</span>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted">{{ prompt.description }}</p>
+                    <small class="text-muted">Sent: {{ prompt.sent_date.strftime('%B %d, %Y') }}</small>
+
+                    <div class="mt-2">
+                        <a href="{{ url_for('therapist.view_prompt_responses', prompt_id=prompt.prompt_id) }}"
+                           class="btn btn-sm btn-primary">
+                            View Responses
+                        </a>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <p class="text-muted">No prompts sent yet.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

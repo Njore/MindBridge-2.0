@@ -1,0 +1,120 @@
+<!-- templates/therapist/clients.html -->
+{% extends "base.html" %}
+{% block title %}My Clients - MindBridge{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1><i class="bi bi-people-fill"></i> My Clients</h1>
+    <a href="{{ url_for('therapist.search_clients') }}" class="btn btn-primary">
+        <i class="bi bi-person-plus"></i> Connect New Client
+    </a>
+</div>
+
+{% if relationships %}
+    <!-- Active Clients -->
+    {% set active_clients = relationships | selectattr('status.value', 'equalto', 'active') | list %}
+    {% if active_clients %}
+    <h4 class="mb-3">Active Clients ({{ active_clients|length }})</h4>
+    <div class="row mb-4">
+        {% for relationship in active_clients %}
+        <div class="col-md-6 mb-3">
+            <div class="card h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start mb-3">
+                        <div>
+                            <h5 class="card-title mb-1">
+                                <i class="bi bi-person-circle"></i> {{ relationship.client_user.get_full_name() }}
+                            </h5>
+                            <p class="text-muted small mb-0">
+                                <i class="bi bi-envelope"></i> {{ relationship.client_user.email }}
+                            </p>
+                            {% if relationship.client_user.phone %}
+                            <p class="text-muted small mb-0">
+                                <i class="bi bi-telephone"></i> {{ relationship.client_user.phone }}
+                            </p>
+                            {% endif %}
+                        </div>
+                        <span class="badge bg-success">Active</span>
+                    </div>
+
+                    <div class="mb-3">
+                        <small class="text-muted"><strong>Relationship Started:</strong></small>
+                        <p class="mb-0">{{ relationship.relationship_start_date.strftime('%B %d, %Y') }}</p>
+                    </div>
+
+                    {% if relationship.client_goals %}
+                    <div class="mb-3">
+                        <small class="text-muted"><strong>Client Goals:</strong></small>
+                        <p class="small mb-0">{{ relationship.client_goals[:150] }}{% if relationship.client_goals|length > 150 %}...{% endif %}</p>
+                    </div>
+                    {% endif %}
+
+                    <div class="d-grid gap-2">
+                        <a href="{{ url_for('therapist.client_detail', client_id=relationship.client_id) }}"
+                           class="btn btn-primary btn-sm">
+                            <i class="bi bi-eye"></i> View Details
+                        </a>
+                        <div class="btn-group" role="group">
+                            <a href="{{ url_for('messaging.conversation', other_user_id=relationship.client_id) }}"
+                               class="btn btn-outline-primary btn-sm">
+                                <i class="bi bi-envelope"></i> Message
+                            </a>
+                            <a href="{{ url_for('therapist.edit_relationship', client_id=relationship.client_id) }}"
+                               class="btn btn-outline-secondary btn-sm">
+                                <i class="bi bi-pencil"></i> Edit
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer bg-light">
+                    <small class="text-muted">Last updated: {{ relationship.updated_at.strftime('%B %d, %Y') }}</small>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Inactive/Ended Clients -->
+    {% set inactive_clients = relationships | rejectattr('status.value', 'equalto', 'active') | list %}
+    {% if inactive_clients %}
+    <h4 class="mb-3 mt-4">Past Clients ({{ inactive_clients|length }})</h4>
+    <div class="accordion" id="pastClientsAccordion">
+        {% for relationship in inactive_clients %}
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                        data-bs-target="#client{{ relationship.relationship_id }}">
+                    {{ relationship.client_user.get_full_name() }}
+                    <span class="badge bg-secondary ms-2">{{ relationship.status.value.title() }}</span>
+                </button>
+            </h2>
+            <div id="client{{ relationship.relationship_id }}" class="accordion-collapse collapse"
+                 data-bs-parent="#pastClientsAccordion">
+                <div class="accordion-body">
+                    <p><strong>Email:</strong> {{ relationship.client_user.email }}</p>
+                    <p><strong>Relationship Period:</strong>
+                        {{ relationship.relationship_start_date.strftime('%B %d, %Y') }}
+                        {% if relationship.relationship_end_date %}
+                        - {{ relationship.relationship_end_date.strftime('%B %d, %Y') }}
+                        {% endif %}
+                    </p>
+                    <a href="{{ url_for('therapist.client_detail', client_id=relationship.client_id) }}"
+                       class="btn btn-sm btn-outline-primary">
+                        <i class="bi bi-eye"></i> View Details
+                    </a>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+{% else %}
+    <div class="alert alert-info">
+        <h5><i class="bi bi-info-circle"></i> No client relationships yet</h5>
+        <p class="mb-3">Start building your client base by connecting with clients.</p>
+        <a href="{{ url_for('therapist.search_clients') }}" class="btn btn-primary">
+            <i class="bi bi-search"></i> Search for Clients
+        </a>
+    </div>
+{% endif %}
+{% endblock %}
