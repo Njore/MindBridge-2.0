@@ -203,7 +203,7 @@ def add_breakthrough():
         flash('Breakthrough added successfully!', 'success')
         return redirect(url_for('client.breakthroughs'))
 
-    return render_template('client/add_breakthrough.html', user=user)
+    return render_template('client/add_breakthrough.html', user=user, now=datetime.now())
 
 
 @client_bp.route('/triggers')
