@@ -1,314 +1,379 @@
-"""
-Crisis Management Blueprint
-Handles crisis resources, de-escalation techniques, and crisis events
-"""
-
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify
-from models import (db, User, CrisisDirectory, DeescalationTechnique, CrisisEvent,
-                    ClientDeescalationHistory, ClientTherapistRelationship, Notification,
-                    CrisisType, CrisisStatus, TechniqueCategory, RelationshipStatus)
-from blueprints.auth import login_required, client_required, log_activity
+from flask import Blueprint, request, jsonify, session
+from models import (db, CrisisEvent, DeescalationTechnique, ClientDeescalationHistory,
+                    ClientTherapistRelationship, Notification, ActivityLog)
 from datetime import datetime
-from sqlalchemy import desc
 
 crisis_bp = Blueprint('crisis', __name__)
 
+def require_auth():
+    """Decorator to require authentication"""
+    def decorator(f):
+        def wrapper(*args, **kwargs):
+            if 'user_id' not in session:
+                return jsonify({'error': 'Unauthorized'}), 401
+            return f(*args, **kwargs)
+        wrapper.__name__ = f.__name__
+        return wrapper
+    return decorator
 
-@crisis_bp.route('/')
-@login_required
-def index():
-    """Crisis support landing page"""
-    user = User.query.get(session['user_id'])
+# ========================================
+# CRISIS EVENTS
+# ========================================
 
-    # Get crisis resources
-    resources = CrisisDirectory.query.filter_by(is_active=True).all()
-
-    # Get de-escalation techniques
-    techniques = DeescalationTechnique.query.filter_by(is_active=True).order_by(
-        DeescalationTechnique.difficulty_level,
-        DeescalationTechnique.technique_category
-    ).all()
-
-    # Group techniques by category
-    techniques_by_category = {}
-    for technique in techniques:
-        category = technique.technique_category.value
-        if category not in techniques_by_category:
-            techniques_by_category[category] = []
-        techniques_by_category[category].append(technique)
-
-    return render_template('crisis/index.html',
-                           user=user,
-                           resources=resources,
-                           techniques_by_category=techniques_by_category)
-
-
-@crisis_bp.route('/resources')
-@login_required
-def resources():
-    """View crisis resources directory"""
-    user = User.query.get(session['user_id'])
-
-    resources = CrisisDirectory.query.filter_by(is_active=True).order_by(
-        CrisisDirectory.resource_type,
-        CrisisDirectory.resource_name
-    ).all()
-
-    # Group by resource type
-    resources_by_type = {}
-    for resource in resources:
-        resource_type = resource.resource_type
-        if resource_type not in resources_by_type:
-            resources_by_type[resource_type] = []
-        resources_by_type[resource_type].append(resource)
-
-    return render_template('crisis/resources.html',
-                           user=user,
-                           resources_by_type=resources_by_type)
-
-
-@crisis_bp.route('/techniques')
-@login_required
-def techniques():
-    """View de-escalation techniques"""
-    user = User.query.get(session['user_id'])
-
-    category = request.args.get('category', '')
-    difficulty = request.args.get('difficulty', '')
-
-    query = DeescalationTechnique.query.filter_by(is_active=True)
-
-    if category:
-        query = query.filter_by(technique_category=TechniqueCategory(category))
-
-    if difficulty:
-        query = query.filter_by(difficulty_level=difficulty)
-
-    techniques = query.order_by(DeescalationTechnique.technique_name).all()
-
-    return render_template('crisis/techniques.html',
-                           user=user,
-                           techniques=techniques,
-                           selected_category=category,
-                           selected_difficulty=difficulty)
-
-
-@crisis_bp.route('/techniques/<int:technique_id>')
-@login_required
-def technique_detail(technique_id):
-    """View technique details"""
-    user = User.query.get(session['user_id'])
-    technique = DeescalationTechnique.query.get_or_404(technique_id)
-
-    # Get user's usage history for this technique
-    usage_history = None
-    if session.get('user_type') == 'client':
-        usage_history = ClientDeescalationHistory.query.filter_by(
-            client_id=user.user_id,
-            technique_id=technique_id
-        ).order_by(desc(ClientDeescalationHistory.usage_date)).limit(10).all()
-
-    return render_template('crisis/technique_detail.html',
-                           user=user,
-                           technique=technique,
-                           usage_history=usage_history)
-
-
-@crisis_bp.route('/techniques/<int:technique_id>/use', methods=['POST'])
-@client_required
-def log_technique_usage(technique_id):
-    """Log usage of a de-escalation technique"""
-    user = User.query.get(session['user_id'])
-    technique = DeescalationTechnique.query.get_or_404(technique_id)
-
-    effectiveness_rating = request.form.get('effectiveness_rating', type=int)
-    duration_used = request.form.get('duration_used_minutes', type=int)
-    notes = request.form.get('notes', '').strip()
-    crisis_id = request.form.get('crisis_id', type=int)
-
-    history = ClientDeescalationHistory(
-        client_id=user.user_id,
-        crisis_id=crisis_id,
-        technique_id=technique_id,
-        effectiveness_rating=effectiveness_rating,
-        duration_used_minutes=duration_used,
-        notes=notes
-    )
-
-    db.session.add(history)
-    db.session.commit()
-
-    log_activity(user.user_id, 'technique_used', 'deescalation_technique',
-                 technique_id, f'Used technique: {technique.technique_name}')
-
-    flash('Technique usage logged. Thank you for tracking your progress!', 'success')
-    return redirect(url_for('crisis.technique_detail', technique_id=technique_id))
-
-
-@crisis_bp.route('/log-event', methods=['GET', 'POST'])
-@client_required
+@crisis_bp.route('/events', methods=['POST'])
+@require_auth()
 def log_crisis_event():
-    """Log a crisis event"""
-    user = User.query.get(session['user_id'])
-
+    """Log a crisis event (client only)"""
+    user_id = session['user_id']
+    user_type = session['user_type']
+    
+    if user_type != 'client':
+        return jsonify({'error': 'Only clients can log crisis events'}), 403
+    
+    data = request.get_json()
+    
+    required = ['crisis_type', 'severity_level', 'description']
+    if not all(field in data for field in required):
+        return jsonify({'error': 'Missing required fields'}), 400
+    
+    severity = data['severity_level']
+    if severity < 1 or severity > 10:
+        return jsonify({'error': 'Severity level must be between 1 and 10'}), 400
+    
     # Get active relationship
     relationship = ClientTherapistRelationship.query.filter_by(
-        client_id=user.user_id,
-        status=RelationshipStatus.ACTIVE
+        client_id=user_id,
+        status='active'
     ).first()
-
+    
     if not relationship:
-        flash('You need an active therapist relationship to log crisis events.', 'warning')
-        return redirect(url_for('crisis.index'))
-
-    if request.method == 'POST':
-        crisis_type = request.form.get('crisis_type')
-        severity_level = request.form.get('severity_level', type=int)
-        description = request.form.get('description', '').strip()
-        immediate_action = request.form.get('immediate_action', '').strip()
-        notify_therapist = request.form.get('notify_therapist', False)
-
-        if not crisis_type or not description:
-            flash('Crisis type and description are required.', 'danger')
-            return render_template('crisis/log_event.html', user=user)
-
+        return jsonify({'error': 'No active therapist relationship found'}), 404
+    
+    try:
         crisis = CrisisEvent(
-            client_id=user.user_id,
+            client_id=user_id,
             relationship_id=relationship.relationship_id,
-            crisis_type=CrisisType(crisis_type),
-            severity_level=severity_level,
-            description=description,
-            immediate_action_taken=immediate_action,
-            therapist_notified=bool(notify_therapist),
-            status=CrisisStatus.LOGGED
+            crisis_type=data['crisis_type'],
+            severity_level=severity,
+            description=data['description'],
+            immediate_action_taken=data.get('immediate_action_taken'),
+            resources_accessed=data.get('resources_accessed', []),
+            status='logged'
         )
-
-        if bool(notify_therapist):
-            crisis.therapist_notification_date = datetime.utcnow()
-
         db.session.add(crisis)
         db.session.commit()
-
-        log_activity(user.user_id, 'crisis_event_logged', 'crisis_event',
-                     crisis.crisis_id, f'Crisis event: {crisis_type}')
-
-        # Notify therapist if requested or if high severity
-        if bool(notify_therapist) or severity_level >= 8:
-            crisis.notify_therapist()
-            db.session.commit()
-
+        
+        # Notify therapist if severity >= 7
+        if severity >= 7:
             notification = Notification(
                 user_id=relationship.therapist_id,
-                notification_type='crisis_event',
-                title='URGENT: Crisis Event',
-                message=f'{user.get_full_name()} logged a crisis event (severity: {severity_level}/10). Immediate attention needed.',
+                notification_type='crisis_alert',
+                title='High-Severity Crisis Alert',
+                message=f'A client has logged a severity {severity} crisis event',
                 related_entity_type='crisis_event',
                 related_entity_id=crisis.crisis_id
             )
             db.session.add(notification)
+            
+            crisis.therapist_notified = True
+            crisis.therapist_notification_date = datetime.utcnow()
             db.session.commit()
-
-        flash('Crisis event logged. Please seek immediate help if needed.', 'warning')
-        return redirect(url_for('crisis.my_events'))
-
-    return render_template('crisis/log_event.html', user=user)
-
-
-@crisis_bp.route('/my-events')
-@client_required
-def my_events():
-    """View client's crisis events"""
-    user = User.query.get(session['user_id'])
-
-    events = CrisisEvent.query.filter_by(
-        client_id=user.user_id
-    ).order_by(desc(CrisisEvent.created_at)).all()
-
-    return render_template('crisis/my_events.html',
-                           user=user,
-                           events=events)
-
-
-@crisis_bp.route('/events/<int:crisis_id>')
-@login_required
-def event_detail(crisis_id):
-    """View crisis event details"""
-    user = User.query.get(session['user_id'])
-    crisis = CrisisEvent.query.get_or_404(crisis_id)
-
-    # Verify access
-    can_view = False
-    if session.get('user_type') == 'client' and crisis.client_id == user.user_id:
-        can_view = True
-    elif session.get('user_type') == 'therapist':
-        relationship = ClientTherapistRelationship.query.filter_by(
-            relationship_id=crisis.relationship_id,
-            therapist_id=user.user_id
-        ).first()
-        if relationship:
-            can_view = True
-
-    if not can_view:
-        flash('Access denied.', 'danger')
-        return redirect(url_for('crisis.index'))
-
-    # Get de-escalation techniques used during this crisis
-    techniques_used = ClientDeescalationHistory.query.filter_by(
-        crisis_id=crisis_id
-    ).all()
-
-    return render_template('crisis/event_detail.html',
-                           user=user,
-                           crisis=crisis,
-                           techniques_used=techniques_used)
-
-
-@crisis_bp.route('/events/<int:crisis_id>/update-status', methods=['POST'])
-@client_required
-def update_crisis_status(crisis_id):
-    """Update crisis event status"""
-    user = User.query.get(session['user_id'])
-    crisis = CrisisEvent.query.get_or_404(crisis_id)
-
-    if crisis.client_id != user.user_id:
-        flash('Access denied.', 'danger')
-        return redirect(url_for('crisis.my_events'))
-
-    new_status = request.form.get('status')
-    resolution_notes = request.form.get('resolution_notes', '').strip()
-
-    if new_status:
-        crisis.status = CrisisStatus(new_status)
-        if resolution_notes:
-            crisis.resolution_notes = resolution_notes
-
+        
+        # Log activity
+        log = ActivityLog(
+            user_id=user_id,
+            action_type='crisis_logged',
+            resource_type='crisis_event',
+            resource_id=crisis.crisis_id,
+            description=f'Crisis event logged: {data["crisis_type"]} (severity {severity})',
+            ip_address=request.remote_addr
+        )
+        db.session.add(log)
         db.session.commit()
+        
+        return jsonify({
+            'message': 'Crisis event logged successfully',
+            'crisis_id': crisis.crisis_id,
+            'therapist_notified': crisis.therapist_notified
+        }), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Failed to log crisis: {str(e)}'}), 500
 
-        log_activity(user.user_id, 'crisis_status_updated', 'crisis_event',
-                     crisis_id, f'Status updated to: {new_status}')
+@crisis_bp.route('/events', methods=['GET'])
+@require_auth()
+def get_crisis_events():
+    """Get user's crisis events"""
+    user_id = session['user_id']
+    user_type = session['user_type']
+    
+    if user_type == 'client':
+        events = CrisisEvent.query.filter_by(
+            client_id=user_id
+        ).order_by(CrisisEvent.created_at.desc()).limit(50).all()
+    else:
+        # Therapist: get events from their clients
+        relationships = ClientTherapistRelationship.query.filter_by(
+            therapist_id=user_id,
+            status='active'
+        ).all()
+        
+        client_ids = [r.client_id for r in relationships]
+        events = CrisisEvent.query.filter(
+            CrisisEvent.client_id.in_(client_ids)
+        ).order_by(CrisisEvent.created_at.desc()).limit(50).all()
+    
+    return jsonify({
+        'events': [{
+            'crisis_id': e.crisis_id,
+            'client_id': e.client_id,
+            'crisis_type': e.crisis_type,
+            'severity_level': e.severity_level,
+            'description': e.description,
+            'immediate_action_taken': e.immediate_action_taken,
+            'status': e.status,
+            'therapist_notified': e.therapist_notified,
+            'created_at': e.created_at.isoformat()
+        } for e in events]
+    }), 200
 
-        flash('Crisis event status updated.', 'success')
+@crisis_bp.route('/events/<int:crisis_id>', methods=['PUT'])
+@require_auth()
+def update_crisis_event(crisis_id):
+    """Update crisis event status (therapist or client)"""
+    user_id = session['user_id']
+    data = request.get_json()
+    
+    crisis = CrisisEvent.query.get(crisis_id)
+    if not crisis:
+        return jsonify({'error': 'Crisis event not found'}), 404
+    
+    # Verify access
+    relationship = ClientTherapistRelationship.query.get(crisis.relationship_id)
+    if crisis.client_id != user_id and relationship.therapist_id != user_id:
+        return jsonify({'error': 'Access denied'}), 403
+    
+    # Update status
+    if 'status' in data:
+        if data['status'] not in ['logged', 'in_progress', 'resolved', 'escalated']:
+            return jsonify({'error': 'Invalid status'}), 400
+        crisis.status = data['status']
+    
+    # Update resolution notes (therapist only)
+    if 'resolution_notes' in data and relationship.therapist_id == user_id:
+        crisis.resolution_notes = data['resolution_notes']
+    
+    crisis.updated_at = datetime.utcnow()
+    db.session.commit()
+    
+    return jsonify({'message': 'Crisis event updated successfully'}), 200
 
-    return redirect(url_for('crisis.event_detail', crisis_id=crisis_id))
+# ========================================
+# DEESCALATION TECHNIQUES
+# ========================================
 
+@crisis_bp.route('/techniques', methods=['GET'])
+def get_techniques():
+    """
+    Get deescalation techniques
+    PRD: Available even when not logged in (crisis accessible)
+    """
+    category = request.args.get('category')
+    crisis_type = request.args.get('crisis_type')
+    
+    query = DeescalationTechnique.query.filter_by(is_active=True)
+    
+    if category:
+        query = query.filter_by(technique_category=category)
+    
+    techniques = query.all()
+    
+    # Filter by crisis type if provided
+    if crisis_type and techniques:
+        techniques = [t for t in techniques if not t.best_for or crisis_type in t.best_for]
+    
+    return jsonify({
+        'techniques': [{
+            'technique_id': t.technique_id,
+            'technique_name': t.technique_name,
+            'technique_category': t.technique_category,
+            'description': t.description,
+            'step_by_step_instructions': t.step_by_step_instructions,
+            'estimated_duration_minutes': t.estimated_duration_minutes,
+            'difficulty_level': t.difficulty_level,
+            'audio_guide_url': t.audio_guide_url,
+            'video_guide_url': t.video_guide_url
+        } for t in techniques]
+    }), 200
 
-@crisis_bp.route('/api/emergency-contacts')
-@login_required
-def emergency_contacts():
-    """API endpoint for emergency contacts"""
-    resources = CrisisDirectory.query.filter_by(
-        is_active=True,
-        available_24_7=True
-    ).all()
+@crisis_bp.route('/techniques/<int:technique_id>', methods=['GET'])
+def get_technique_detail(technique_id):
+    """Get detailed technique instructions (always accessible)"""
+    technique = DeescalationTechnique.query.filter_by(
+        technique_id=technique_id,
+        is_active=True
+    ).first()
+    
+    if not technique:
+        return jsonify({'error': 'Technique not found'}), 404
+    
+    return jsonify({
+        'technique_id': technique.technique_id,
+        'technique_name': technique.technique_name,
+        'technique_category': technique.technique_category,
+        'description': technique.description,
+        'step_by_step_instructions': technique.step_by_step_instructions,
+        'estimated_duration_minutes': technique.estimated_duration_minutes,
+        'difficulty_level': technique.difficulty_level,
+        'best_for': technique.best_for,
+        'audio_guide_url': technique.audio_guide_url,
+        'video_guide_url': technique.video_guide_url
+    }), 200
 
-    contacts = []
-    for resource in resources:
-        contacts.append({
-            'name': resource.resource_name,
-            'type': resource.resource_type,
-            'phone': resource.phone_number,
-            'text': resource.text_number,
-            'website': resource.website_url
-        })
+@crisis_bp.route('/techniques/<int:technique_id>/use', methods=['POST'])
+@require_auth()
+def log_technique_usage(technique_id):
+    """Log usage of a deescalation technique"""
+    user_id = session['user_id']
+    user_type = session['user_type']
+    
+    if user_type != 'client':
+        return jsonify({'error': 'Only clients can log technique usage'}), 403
+    
+    data = request.get_json()
+    
+    technique = DeescalationTechnique.query.get(technique_id)
+    if not technique:
+        return jsonify({'error': 'Technique not found'}), 404
+    
+    try:
+        history = ClientDeescalationHistory(
+            client_id=user_id,
+            crisis_id=data.get('crisis_id'),
+            technique_id=technique_id,
+            effectiveness_rating=data.get('effectiveness_rating'),
+            duration_used_minutes=data.get('duration_used_minutes'),
+            notes=data.get('notes')
+        )
+        db.session.add(history)
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'Technique usage logged successfully',
+            'history_id': history.history_id
+        }), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Failed to log usage: {str(e)}'}), 500
 
-    return jsonify({'contacts': contacts})
+@crisis_bp.route('/techniques/history', methods=['GET'])
+@require_auth()
+def get_technique_history():
+    """Get user's technique usage history"""
+    user_id = session['user_id']
+    
+    history = ClientDeescalationHistory.query.filter_by(
+        client_id=user_id
+    ).order_by(ClientDeescalationHistory.usage_date.desc()).limit(50).all()
+    
+    return jsonify({
+        'history': [{
+            'history_id': h.history_id,
+            'technique_id': h.technique_id,
+            'crisis_id': h.crisis_id,
+            'effectiveness_rating': h.effectiveness_rating,
+            'duration_used_minutes': h.duration_used_minutes,
+            'notes': h.notes,
+            'usage_date': h.usage_date.isoformat()
+        } for h in history]
+    }), 200
+
+# ========================================
+# ADMIN: MANAGE TECHNIQUES (Therapist)
+# ========================================
+
+@crisis_bp.route('/admin/techniques', methods=['POST'])
+@require_auth()
+def create_technique():
+    """Create new deescalation technique (admin/therapist)"""
+    user_type = session['user_type']
+    
+    if user_type != 'therapist':
+        return jsonify({'error': 'Therapist access only'}), 403
+    
+    data = request.get_json()
+    
+    required = ['technique_name', 'technique_category', 'description', 'step_by_step_instructions']
+    if not all(field in data for field in required):
+        return jsonify({'error': 'Missing required fields'}), 400
+    
+    try:
+        technique = DeescalationTechnique(
+            technique_name=data['technique_name'],
+            technique_category=data['technique_category'],
+            description=data['description'],
+            step_by_step_instructions=data['step_by_step_instructions'],
+            estimated_duration_minutes=data.get('estimated_duration_minutes'),
+            difficulty_level=data.get('difficulty_level', 'beginner'),
+            best_for=data.get('best_for', []),
+            audio_guide_url=data.get('audio_guide_url'),
+            video_guide_url=data.get('video_guide_url'),
+            is_active=True,
+            is_crisis_accessible=data.get('is_crisis_accessible', True)
+        )
+        db.session.add(technique)
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'Technique created successfully',
+            'technique_id': technique.technique_id
+        }), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Failed to create technique: {str(e)}'}), 500
+
+# ========================================
+# EMERGENCY RESOURCES
+# ========================================
+
+@crisis_bp.route('/resources', methods=['GET'])
+def get_emergency_resources():
+    """
+    Get emergency resources (always accessible)
+    Kenya-specific crisis hotlines
+    """
+    resources = {
+        'kenya': {
+            'suicide_prevention': {
+                'name': 'Kenya Red Cross Society',
+                'phone': '1199',
+                'available': '24/7'
+            },
+            'mental_health': {
+                'name': 'Befrienders Kenya',
+                'phone': '+254 722 178 177',
+                'available': '24/7'
+            },
+            'emergency': {
+                'name': 'Emergency Services',
+                'phone': '999 or 112',
+                'available': '24/7'
+            },
+            'gender_violence': {
+                'name': 'Gender Violence Recovery Centre',
+                'phone': '0800 720 553',
+                'available': '24/7'
+            }
+        },
+        'international': {
+            'suicide_prevention': {
+                'name': 'International Association for Suicide Prevention',
+                'website': 'https://www.iasp.info/resources/Crisis_Centres/'
+            }
+        }
+    }
+    
+    return jsonify({'resources': resources}), 200

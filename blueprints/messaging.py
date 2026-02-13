@@ -1,207 +1,358 @@
-"""
-Messaging Blueprint
-Handles secure messaging between clients and therapists
-"""
-
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify
-from models import (db, User, Message, ClientTherapistRelationship, MessageType,
-                    RelationshipStatus, Notification)
-from blueprints.auth import login_required, log_activity
-from datetime import datetime
-from sqlalchemy import desc, or_, and_
+from flask import Blueprint, request, jsonify, session
+from models import (db, Capsule, Message, MessageTag, MessageAttachment, 
+                    ClientTherapistRelationship, Notification, ActivityLog)
+from datetime import datetime, timedelta
 
 messaging_bp = Blueprint('messaging', __name__)
 
+def require_auth():
+    """Decorator to require authentication"""
+    def decorator(f):
+        def wrapper(*args, **kwargs):
+            if 'user_id' not in session:
+                return jsonify({'error': 'Unauthorized'}), 401
+            return f(*args, **kwargs)
+        wrapper.__name__ = f.__name__
+        return wrapper
+    return decorator
 
-@messaging_bp.route('/')
-@login_required
-def inbox():
-    """View inbox"""
-    user = User.query.get(session['user_id'])
+# ========================================
+# CAPSULES
+# ========================================
 
-    # Get all messages for this user
-    messages = Message.query.filter(
-        or_(
-            and_(Message.recipient_id == user.user_id, Message.is_deleted_by_recipient == False),
-            and_(Message.sender_id == user.user_id, Message.is_deleted_by_sender == False)
-        )
-    ).order_by(desc(Message.created_at)).all()
-
-    # Group messages by conversation
-    conversations = {}
-    for message in messages:
-        other_user_id = message.sender_id if message.recipient_id == user.user_id else message.recipient_id
-        if other_user_id not in conversations:
-            conversations[other_user_id] = {
-                'other_user': User.query.get(other_user_id),
-                'messages': [],
-                'unread_count': 0,
-                'last_message': None
-            }
-
-        conversations[other_user_id]['messages'].append(message)
-
-        if message.recipient_id == user.user_id and not message.read_status:
-            conversations[other_user_id]['unread_count'] += 1
-
-        if not conversations[other_user_id]['last_message'] or \
-                message.created_at > conversations[other_user_id]['last_message'].created_at:
-            conversations[other_user_id]['last_message'] = message
-
-    # Sort conversations by last message
-    conversations = dict(sorted(
-        conversations.items(),
-        key=lambda x: x[1]['last_message'].created_at if x[1]['last_message'] else datetime.min,
-        reverse=True
-    ))
-
-    return render_template('messaging/inbox.html',
-                           user=user,
-                           conversations=conversations)
-
-
-@messaging_bp.route('/conversation/<int:other_user_id>')
-@login_required
-def conversation(other_user_id):
-    """View conversation with specific user"""
-    user = User.query.get(session['user_id'])
-    other_user = User.query.get_or_404(other_user_id)
-
-    # Verify they have a relationship
-    relationship = ClientTherapistRelationship.query.filter(
-        or_(
-            and_(ClientTherapistRelationship.client_id == user.user_id,
-                 ClientTherapistRelationship.therapist_id == other_user_id),
-            and_(ClientTherapistRelationship.client_id == other_user_id,
-                 ClientTherapistRelationship.therapist_id == user.user_id)
-        ),
-        ClientTherapistRelationship.status == RelationshipStatus.ACTIVE
+@messaging_bp.route('/capsules', methods=['POST'])
+@require_auth()
+def create_capsule():
+    """Create a new capsule (client only)"""
+    user_id = session['user_id']
+    user_type = session['user_type']
+    
+    if user_type != 'client':
+        return jsonify({'error': 'Only clients can create capsules'}), 403
+    
+    data = request.get_json()
+    
+    if 'therapist_id' not in data:
+        return jsonify({'error': 'therapist_id required'}), 400
+    
+    # Verify active relationship
+    relationship = ClientTherapistRelationship.query.filter_by(
+        client_id=user_id,
+        therapist_id=data['therapist_id'],
+        status='active'
     ).first()
-
+    
     if not relationship:
-        flash('No active relationship found with this user.', 'warning')
-        return redirect(url_for('messaging.inbox'))
-
-    # Get messages between users
-    messages = Message.query.filter(
-        Message.relationship_id == relationship.relationship_id,
-        or_(
-            and_(Message.sender_id == user.user_id, Message.is_deleted_by_sender == False),
-            and_(Message.recipient_id == user.user_id, Message.is_deleted_by_recipient == False)
+        return jsonify({'error': 'No active relationship with this therapist'}), 404
+    
+    try:
+        capsule = Capsule(
+            client_id=user_id,
+            therapist_id=data['therapist_id'],
+            relationship_id=relationship.relationship_id,
+            title=data.get('title', f"Capsule - {datetime.utcnow().strftime('%Y-%m-%d')}"),
+            user_tag=data.get('user_tag', 'general'),
+            status='open'
         )
+        db.session.add(capsule)
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'Capsule created successfully',
+            'capsule_id': capsule.capsule_id,
+            'status': capsule.status,
+            'created_at': capsule.created_at.isoformat()
+        }), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Failed to create capsule: {str(e)}'}), 500
+
+@messaging_bp.route('/capsules', methods=['GET'])
+@require_auth()
+def get_capsules():
+    """Get user's capsules"""
+    user_id = session['user_id']
+    user_type = session['user_type']
+    
+    status = request.args.get('status')
+    
+    if user_type == 'client':
+        query = Capsule.query.filter_by(client_id=user_id)
+    else:
+        query = Capsule.query.filter_by(therapist_id=user_id)
+    
+    if status:
+        query = query.filter_by(status=status)
+    
+    capsules = query.order_by(Capsule.created_at.desc()).limit(50).all()
+    
+    return jsonify({
+        'capsules': [{
+            'capsule_id': c.capsule_id,
+            'client_id': c.client_id,
+            'therapist_id': c.therapist_id,
+            'title': c.title,
+            'user_tag': c.user_tag,
+            'status': c.status,
+            'created_at': c.created_at.isoformat(),
+            'sealed_at': c.sealed_at.isoformat() if c.sealed_at else None
+        } for c in capsules]
+    }), 200
+
+@messaging_bp.route('/capsules/<int:capsule_id>', methods=['GET'])
+@require_auth()
+def get_capsule(capsule_id):
+    """Get capsule with messages"""
+    user_id = session['user_id']
+    
+    capsule = Capsule.query.get(capsule_id)
+    if not capsule:
+        return jsonify({'error': 'Capsule not found'}), 404
+    
+    # Verify access
+    if capsule.client_id != user_id and capsule.therapist_id != user_id:
+        return jsonify({'error': 'Access denied'}), 403
+    
+    # Get messages
+    messages = Message.query.filter_by(
+        capsule_id=capsule_id
     ).order_by(Message.created_at).all()
+    
+    return jsonify({
+        'capsule': {
+            'capsule_id': capsule.capsule_id,
+            'client_id': capsule.client_id,
+            'therapist_id': capsule.therapist_id,
+            'title': capsule.title,
+            'user_tag': capsule.user_tag,
+            'status': capsule.status,
+            'created_at': capsule.created_at.isoformat(),
+            'sealed_at': capsule.sealed_at.isoformat() if capsule.sealed_at else None
+        },
+        'messages': [{
+            'message_id': m.message_id,
+            'sender_id': m.sender_id,
+            'content': m.content,
+            'created_at': m.created_at.isoformat()
+        } for m in messages]
+    }), 200
 
-    # Mark unread messages as read
-    for message in messages:
-        if message.recipient_id == user.user_id and not message.read_status:
-            message.mark_as_read()
-
+@messaging_bp.route('/capsules/<int:capsule_id>/seal', methods=['POST'])
+@require_auth()
+def seal_capsule(capsule_id):
+    """Seal a capsule (24-hour window closed)"""
+    user_id = session['user_id']
+    
+    capsule = Capsule.query.get(capsule_id)
+    if not capsule:
+        return jsonify({'error': 'Capsule not found'}), 404
+    
+    # Only client can seal their own capsule
+    if capsule.client_id != user_id:
+        return jsonify({'error': 'Only the client can seal this capsule'}), 403
+    
+    if capsule.status != 'open':
+        return jsonify({'error': 'Capsule is already sealed'}), 400
+    
+    capsule.status = 'sealed'
+    capsule.sealed_at = datetime.utcnow()
     db.session.commit()
-
-    return render_template('messaging/conversation.html',
-                           user=user,
-                           other_user=other_user,
-                           messages=messages,
-                           relationship=relationship)
-
-
-@messaging_bp.route('/send', methods=['POST'])
-@login_required
-def send_message():
-    """Send a message"""
-    user = User.query.get(session['user_id'])
-
-    recipient_id = request.form.get('recipient_id', type=int)
-    message_type = request.form.get('message_type', 'general')
-    subject = request.form.get('subject', '').strip()
-    content = request.form.get('content', '').strip()
-
-    if not recipient_id or not content:
-        flash('Recipient and content are required.', 'danger')
-        return redirect(url_for('messaging.inbox'))
-
-    # Verify relationship exists
-    relationship = ClientTherapistRelationship.query.filter(
-        or_(
-            and_(ClientTherapistRelationship.client_id == user.user_id,
-                 ClientTherapistRelationship.therapist_id == recipient_id),
-            and_(ClientTherapistRelationship.client_id == recipient_id,
-                 ClientTherapistRelationship.therapist_id == user.user_id)
-        ),
-        ClientTherapistRelationship.status == RelationshipStatus.ACTIVE
-    ).first()
-
-    if not relationship:
-        flash('No active relationship found with this user.', 'danger')
-        return redirect(url_for('messaging.inbox'))
-
-    message = Message(
-        sender_id=user.user_id,
-        recipient_id=recipient_id,
-        relationship_id=relationship.relationship_id,
-        message_type=MessageType(message_type),
-        subject=subject,
-        content=content,
-        is_encrypted=True
-    )
-
-    db.session.add(message)
-    db.session.commit()
-
-    log_activity(user.user_id, 'message_sent', 'message',
-                 message.message_id, f'Sent message to user {recipient_id}')
-
-    # Create notification for recipient
+    
+    # Notify therapist
     notification = Notification(
-        user_id=recipient_id,
-        notification_type='new_message',
-        title='New Message',
-        message=f'{user.get_full_name()} sent you a message',
-        related_entity_type='message',
-        related_entity_id=message.message_id
+        user_id=capsule.therapist_id,
+        notification_type='capsule_sealed',
+        title='New Capsule Sealed',
+        message=f'A client has sealed a capsule: {capsule.title}',
+        related_entity_type='capsule',
+        related_entity_id=capsule_id
     )
     db.session.add(notification)
     db.session.commit()
+    
+    return jsonify({
+        'message': 'Capsule sealed successfully',
+        'sealed_at': capsule.sealed_at.isoformat()
+    }), 200
 
-    flash('Message sent successfully!', 'success')
-    return redirect(url_for('messaging.conversation', other_user_id=recipient_id))
-
-
-@messaging_bp.route('/delete/<int:message_id>', methods=['POST'])
-@login_required
-def delete_message(message_id):
-    """Delete a message (soft delete)"""
-    user = User.query.get(session['user_id'])
-    message = Message.query.get_or_404(message_id)
-
-    # Soft delete based on user role
-    if message.sender_id == user.user_id:
-        message.is_deleted_by_sender = True
-    elif message.recipient_id == user.user_id:
-        message.is_deleted_by_recipient = True
-    else:
-        flash('Access denied.', 'danger')
-        return redirect(url_for('messaging.inbox'))
-
+@messaging_bp.route('/capsules/<int:capsule_id>/archive', methods=['POST'])
+@require_auth()
+def archive_capsule(capsule_id):
+    """Archive a capsule"""
+    user_id = session['user_id']
+    
+    capsule = Capsule.query.get(capsule_id)
+    if not capsule:
+        return jsonify({'error': 'Capsule not found'}), 404
+    
+    # Both client and therapist can archive
+    if capsule.client_id != user_id and capsule.therapist_id != user_id:
+        return jsonify({'error': 'Access denied'}), 403
+    
+    capsule.status = 'archived'
+    capsule.archived_at = datetime.utcnow()
     db.session.commit()
+    
+    return jsonify({'message': 'Capsule archived successfully'}), 200
 
-    log_activity(user.user_id, 'message_deleted', 'message',
-                 message_id, 'Deleted message')
+# ========================================
+# MESSAGES
+# ========================================
 
-    flash('Message deleted.', 'success')
-    return redirect(url_for('messaging.inbox'))
+@messaging_bp.route('/capsules/<int:capsule_id>/messages', methods=['POST'])
+@require_auth()
+def create_message(capsule_id):
+    """Add a message to a capsule"""
+    user_id = session['user_id']
+    data = request.get_json()
+    
+    capsule = Capsule.query.get(capsule_id)
+    if not capsule:
+        return jsonify({'error': 'Capsule not found'}), 404
+    
+    # Verify access
+    if capsule.client_id != user_id and capsule.therapist_id != user_id:
+        return jsonify({'error': 'Access denied'}), 403
+    
+    # Check if capsule is open
+    if capsule.status == 'sealed' and user_id == capsule.client_id:
+        return jsonify({'error': 'Cannot add messages to sealed capsule'}), 400
+    
+    if not data.get('content'):
+        return jsonify({'error': 'Content required'}), 400
+    
+    try:
+        message = Message(
+            capsule_id=capsule_id,
+            sender_id=user_id,
+            content=data['content']
+        )
+        db.session.add(message)
+        db.session.commit()
+        
+        # Notify the other party
+        recipient_id = capsule.therapist_id if user_id == capsule.client_id else capsule.client_id
+        notification = Notification(
+            user_id=recipient_id,
+            notification_type='new_message',
+            title='New Message',
+            message=f'You have a new message in: {capsule.title}',
+            related_entity_type='capsule',
+            related_entity_id=capsule_id
+        )
+        db.session.add(notification)
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'Message created successfully',
+            'message_id': message.message_id,
+            'created_at': message.created_at.isoformat()
+        }), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Failed to create message: {str(e)}'}), 500
 
+@messaging_bp.route('/messages/<int:message_id>/tags', methods=['POST'])
+@require_auth()
+def add_message_tag(message_id):
+    """Add a tag to a message (user or system)"""
+    user_id = session['user_id']
+    data = request.get_json()
+    
+    message = Message.query.get(message_id)
+    if not message:
+        return jsonify({'error': 'Message not found'}), 404
+    
+    # Verify sender
+    if message.sender_id != user_id:
+        return jsonify({'error': 'Can only tag your own messages'}), 403
+    
+    if not data.get('tag_type'):
+        return jsonify({'error': 'tag_type required'}), 400
+    
+    try:
+        tag = MessageTag(
+            message_id=message_id,
+            tag_type=data['tag_type'],
+            source='user'  # User-added tags
+        )
+        db.session.add(tag)
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'Tag added successfully',
+            'tag_id': tag.tag_id
+        }), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Failed to add tag: {str(e)}'}), 500
 
-@messaging_bp.route('/api/unread-count')
-@login_required
-def unread_count():
-    """Get unread message count (API endpoint)"""
-    user = User.query.get(session['user_id'])
+# ========================================
+# NOTIFICATIONS
+# ========================================
 
-    count = Message.query.filter_by(
-        recipient_id=user.user_id,
-        read_status=False,
-        is_deleted_by_recipient=False
-    ).count()
+@messaging_bp.route('/notifications', methods=['GET'])
+@require_auth()
+def get_notifications():
+    """Get user's notifications"""
+    user_id = session['user_id']
+    
+    unread_only = request.args.get('unread_only', 'false').lower() == 'true'
+    
+    query = Notification.query.filter_by(user_id=user_id)
+    
+    if unread_only:
+        query = query.filter_by(is_read=False)
+    
+    notifications = query.order_by(Notification.created_at.desc()).limit(50).all()
+    
+    return jsonify({
+        'notifications': [{
+            'notification_id': n.notification_id,
+            'notification_type': n.notification_type,
+            'title': n.title,
+            'message': n.message,
+            'is_read': n.is_read,
+            'created_at': n.created_at.isoformat()
+        } for n in notifications]
+    }), 200
 
-    return jsonify({'unread_count': count})
+@messaging_bp.route('/notifications/<int:notification_id>/read', methods=['POST'])
+@require_auth()
+def mark_notification_read(notification_id):
+    """Mark notification as read"""
+    user_id = session['user_id']
+    
+    notification = Notification.query.filter_by(
+        notification_id=notification_id,
+        user_id=user_id
+    ).first()
+    
+    if not notification:
+        return jsonify({'error': 'Notification not found'}), 404
+    
+    notification.is_read = True
+    notification.read_at = datetime.utcnow()
+    db.session.commit()
+    
+    return jsonify({'message': 'Notification marked as read'}), 200
+
+@messaging_bp.route('/notifications/read-all', methods=['POST'])
+@require_auth()
+def mark_all_read():
+    """Mark all notifications as read"""
+    user_id = session['user_id']
+    
+    Notification.query.filter_by(
+        user_id=user_id,
+        is_read=False
+    ).update({
+        'is_read': True,
+        'read_at': datetime.utcnow()
+    })
+    db.session.commit()
+    
+    return jsonify({'message': 'All notifications marked as read'}), 200

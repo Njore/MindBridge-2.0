@@ -8,5 +8,12 @@
       <jdbc-url>jdbc:sqlite:C:\Users\Hawa\Documents\MindBridge 2.0\instance\mindbridge.db</jdbc-url>
       <working-dir>$ProjectFileDir$</working-dir>
     </data-source>
+    <data-source source="LOCAL" name="mindbridge [2]" uuid="fbfbeded-8336-401b-bdaa-72b6a7c0ac12">
+      <driver-ref>sqlite.xerial</driver-ref>
+      <synchronize>true</synchronize>
+      <jdbc-driver>org.sqlite.JDBC</jdbc-driver>
+      <jdbc-url>jdbc:sqlite:$PROJECT_DIR$/instance/mindbridge.db</jdbc-url>
+      <working-dir>$ProjectFileDir$</working-dir>
+    </data-source>
   </component>
 </project>

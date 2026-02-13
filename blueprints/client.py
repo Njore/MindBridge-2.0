@@ -1,501 +1,424 @@
-"""
-Enhanced Client Blueprint
-Includes therapist connection awareness and invitation system
-"""
-
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify
-from models import (db, User, ClientTherapistRelationship, Breakthrough, Trigger,
-                    SessionNote, PromptResponse, TherapeuticPrompt, Notification,
-                    ImpactLevel, NoteType, RelationshipStatus, TriggerSentimentAnalysis, UserType)
-from blueprints.auth import client_required, log_activity
-from datetime import datetime, date
-from sqlalchemy import desc
+from flask import Blueprint, request, jsonify, session, send_file
+from models import (db, User, PrivatePocket, ConsentAgreement, UserPrivacySetting, 
+                    ActivityLog, Capsule, Message, CrisisEvent, PromptResponse)
+from datetime import datetime, date, timedelta
+from cryptography.fernet import Fernet
+import os
+import io
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
+from reportlab.lib.units import inch
 
 client_bp = Blueprint('client', __name__)
 
+# Encryption for Private Pockets (PRD 2.2 - Encryption)
+ENCRYPTION_KEY = os.getenv('ENCRYPTION_KEY')
+if ENCRYPTION_KEY:
+    cipher_suite = Fernet(ENCRYPTION_KEY.encode())
+else:
+    # Generate a key if not in .env (development only)
+    cipher_suite = Fernet(Fernet.generate_key())
 
-@client_bp.route('/dashboard')
-@client_required
-def dashboard():
-    """Client dashboard"""
-    user = User.query.get(session['user_id'])
+def encrypt_content(content):
+    """Encrypt private pocket content"""
+    return cipher_suite.encrypt(content.encode()).decode()
 
-    # Get active therapist relationship
-    relationship = ClientTherapistRelationship.query.filter_by(
-        client_id=user.user_id,
-        status=RelationshipStatus.ACTIVE
-    ).first()
+def decrypt_content(encrypted_content):
+    """Decrypt private pocket content"""
+    return cipher_suite.decrypt(encrypted_content.encode()).decode()
 
-    # Get recent breakthroughs
-    recent_breakthroughs = Breakthrough.query.filter_by(
-        client_id=user.user_id
-    ).order_by(desc(Breakthrough.created_at)).limit(5).all()
+def require_client():
+    """Decorator to require client user type"""
+    def decorator(f):
+        def wrapper(*args, **kwargs):
+            if 'user_id' not in session:
+                return jsonify({'error': 'Unauthorized'}), 401
+            if session.get('user_type') != 'client':
+                return jsonify({'error': 'Client access only'}), 403
+            return f(*args, **kwargs)
+        wrapper.__name__ = f.__name__
+        return wrapper
+    return decorator
 
-    # Get recent triggers
-    recent_triggers = Trigger.query.filter_by(
-        client_id=user.user_id
-    ).order_by(desc(Trigger.date_logged)).limit(5).all()
+# ========================================
+# PRIVATE POCKETS (7 Pockets)
+# ========================================
 
-    # Get pending prompts
-    pending_prompts = []
-    if relationship:
-        pending_prompts = TherapeuticPrompt.query.filter_by(
-            relationship_id=relationship.relationship_id,
-            is_active=True
-        ).filter(
-            ~TherapeuticPrompt.prompt_id.in_(
-                db.session.query(PromptResponse.prompt_id).filter_by(
-                    client_id=user.user_id
-                )
+@client_bp.route('/pockets', methods=['POST'])
+@require_client()
+def create_pocket():
+    """
+    Create/update a private pocket entry
+    PRD: Encrypted personal space - NEVER shared
+    """
+    user_id = session['user_id']
+    data = request.get_json()
+    
+    # Validate pocket_number (1-7)
+    pocket_number = data.get('pocket_number')
+    if not pocket_number or pocket_number not in range(1, 8):
+        return jsonify({'error': 'pocket_number must be between 1 and 7'}), 400
+    
+    content = data.get('content', '').strip()
+    if not content:
+        return jsonify({'error': 'Content cannot be empty'}), 400
+    
+    # Use today's date if not provided
+    pocket_date = data.get('date', date.today().isoformat())
+    
+    try:
+        # Check if pocket exists for this date
+        existing = PrivatePocket.query.filter_by(
+            client_id=user_id,
+            date=pocket_date,
+            pocket_number=pocket_number
+        ).first()
+        
+        # Encrypt content (PRD 2.2)
+        encrypted_content = encrypt_content(content)
+        
+        if existing:
+            # Update existing pocket
+            existing.content = encrypted_content
+            existing.updated_at = datetime.utcnow()
+        else:
+            # Create new pocket
+            pocket = PrivatePocket(
+                client_id=user_id,
+                date=pocket_date,
+                pocket_number=pocket_number,
+                content=encrypted_content
             )
-        ).order_by(TherapeuticPrompt.deadline_date).all()
-
-    # Get unread notifications
-    unread_notifications = Notification.query.filter_by(
-        user_id=user.user_id,
-        is_read=False
-    ).order_by(desc(Notification.created_at)).limit(5).all()
-
-    return render_template('client/dashboard.html',
-                           user=user,
-                           relationship=relationship,
-                           recent_breakthroughs=recent_breakthroughs,
-                           recent_triggers=recent_triggers,
-                           pending_prompts=pending_prompts,
-                           unread_notifications=unread_notifications)
-
-
-@client_bp.route('/therapists')
-@client_required
-def my_therapists():
-    """View connected therapists"""
-    user = User.query.get(session['user_id'])
-
-    # Get all relationships
-    relationships = ClientTherapistRelationship.query.filter_by(
-        client_id=user.user_id
-    ).order_by(desc(ClientTherapistRelationship.relationship_start_date)).all()
-
-    return render_template('client/my_therapists.html',
-                           user=user,
-                           relationships=relationships)
-
-
-@client_bp.route('/therapists/search', methods=['GET', 'POST'])
-@client_required
-def search_therapists():
-    """Search for therapists (optional feature)"""
-    user = User.query.get(session['user_id'])
-
-    search_results = []
-    search_query = ''
-
-    if request.method == 'POST':
-        search_query = request.form.get('search_query', '').strip()
-
-        if search_query:
-            # Search for therapists by name or email
-            search_results = User.query.filter(
-                User.user_type == UserType.THERAPIST,
-                User.is_active == True,
-                db.or_(
-                    User.first_name.ilike(f'%{search_query}%'),
-                    User.last_name.ilike(f'%{search_query}%'),
-                    User.email.ilike(f'%{search_query}%')
-                )
-            ).all()
-
-            # Filter out therapists already connected
-            existing_therapist_ids = [
-                r.therapist_id for r in ClientTherapistRelationship.query.filter_by(
-                    client_id=user.user_id,
-                    status=RelationshipStatus.ACTIVE
-                ).all()
-            ]
-
-            search_results = [t for t in search_results if t.user_id not in existing_therapist_ids]
-
-    return render_template('client/search_therapists.html',
-                           user=user,
-                           search_results=search_results,
-                           search_query=search_query)
-
-
-@client_bp.route('/breakthroughs')
-@client_required
-def breakthroughs():
-    """View all breakthroughs"""
-    user = User.query.get(session['user_id'])
-
-    page = request.args.get('page', 1, type=int)
-    breakthroughs = Breakthrough.query.filter_by(
-        client_id=user.user_id
-    ).order_by(desc(Breakthrough.date_occurred)).paginate(
-        page=page, per_page=10, error_out=False
-    )
-
-    return render_template('client/breakthroughs.html',
-                           user=user,
-                           breakthroughs=breakthroughs)
-
-
-@client_bp.route('/breakthroughs/add', methods=['GET', 'POST'])
-@client_required
-def add_breakthrough():
-    """Add a new breakthrough"""
-    user = User.query.get(session['user_id'])
-    relationship = ClientTherapistRelationship.query.filter_by(
-        client_id=user.user_id,
-        status=RelationshipStatus.ACTIVE
-    ).first()
-
-    if not relationship:
-        flash('You need an active therapist relationship to add breakthroughs.', 'warning')
-        return redirect(url_for('client.dashboard'))
-
-    if request.method == 'POST':
-        title = request.form.get('title', '').strip()
-        description = request.form.get('description', '').strip()
-        category = request.form.get('category', '').strip()
-        impact_level = request.form.get('impact_level', 'moderate')
-        date_occurred_str = request.form.get('date_occurred', '')
-        share_with_therapist = request.form.get('share_with_therapist', False)
-
-        if not title or not description:
-            flash('Title and description are required.', 'danger')
-            return render_template('client/add_breakthrough.html', user=user)
-
-        try:
-            date_occurred = datetime.strptime(date_occurred_str,
-                                              '%Y-%m-%d').date() if date_occurred_str else date.today()
-        except ValueError:
-            date_occurred = date.today()
-
-        breakthrough = Breakthrough(
-            client_id=user.user_id,
-            relationship_id=relationship.relationship_id,
-            title=title,
-            description=description,
-            category=category,
-            impact_level=ImpactLevel(impact_level),
-            date_occurred=date_occurred,
-            is_shared_with_therapist=bool(share_with_therapist)
-        )
-
-        db.session.add(breakthrough)
+            db.session.add(pocket)
+        
         db.session.commit()
+        
+        return jsonify({
+            'message': 'Pocket saved successfully',
+            'pocket_number': pocket_number,
+            'date': pocket_date
+        }), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Failed to save pocket: {str(e)}'}), 500
 
-        log_activity(user.user_id, 'breakthrough_created', 'breakthrough',
-                     breakthrough.breakthrough_id, 'New breakthrough recorded')
+@client_bp.route('/pockets/<pocket_date>', methods=['GET'])
+@require_client()
+def get_pockets_by_date(pocket_date):
+    """
+    Get all pockets for a specific date
+    PRD 1.2: User Data Access - Users can view their data
+    """
+    user_id = session['user_id']
+    
+    pockets = PrivatePocket.query.filter_by(
+        client_id=user_id,
+        date=pocket_date
+    ).order_by(PrivatePocket.pocket_number).all()
+    
+    return jsonify({
+        'date': pocket_date,
+        'pockets': [{
+            'pocket_number': p.pocket_number,
+            'content': decrypt_content(p.content),
+            'created_at': p.created_at.isoformat(),
+            'updated_at': p.updated_at.isoformat()
+        } for p in pockets]
+    }), 200
 
-        if share_with_therapist:
-            notification = Notification(
-                user_id=relationship.therapist_id,
-                notification_type='new_breakthrough',
-                title='New Breakthrough Shared',
-                message=f'{user.get_full_name()} shared a new breakthrough: {title}',
-                related_entity_type='breakthrough',
-                related_entity_id=breakthrough.breakthrough_id
-            )
-            db.session.add(notification)
-            db.session.commit()
+@client_bp.route('/pockets/week', methods=['GET'])
+@require_client()
+def get_week_pockets():
+    """Get all pockets for the current week"""
+    user_id = session['user_id']
+    
+    # Get start and end of current week
+    today = date.today()
+    start_of_week = today - timedelta(days=today.weekday())
+    end_of_week = start_of_week + timedelta(days=6)
+    
+    pockets = PrivatePocket.query.filter(
+        PrivatePocket.client_id == user_id,
+        PrivatePocket.date >= start_of_week,
+        PrivatePocket.date <= end_of_week
+    ).order_by(PrivatePocket.date, PrivatePocket.pocket_number).all()
+    
+    return jsonify({
+        'week_start': start_of_week.isoformat(),
+        'week_end': end_of_week.isoformat(),
+        'pockets': [{
+            'date': p.date.isoformat(),
+            'pocket_number': p.pocket_number,
+            'content': decrypt_content(p.content),
+            'updated_at': p.updated_at.isoformat()
+        } for p in pockets]
+    }), 200
 
-        flash('Breakthrough added successfully!', 'success')
-        return redirect(url_for('client.breakthroughs'))
+# ========================================
+# DATA EXPORT (PDF)
+# PRD 1.3: Data Portability
+# ========================================
 
-    return render_template('client/add_breakthrough.html', user=user, now=datetime.now())
-
-
-@client_bp.route('/triggers')
-@client_required
-def triggers():
-    """View all triggers"""
-    user = User.query.get(session['user_id'])
-
-    page = request.args.get('page', 1, type=int)
-    triggers = Trigger.query.filter_by(
-        client_id=user.user_id
-    ).order_by(desc(Trigger.date_logged)).paginate(
-        page=page, per_page=10, error_out=False
+@client_bp.route('/export/pockets', methods=['POST'])
+@require_client()
+def export_pockets_pdf():
+    """
+    Export 7 Pockets data as PDF
+    PRD 1.3: Data Export (Portability)
+    - Manual trigger
+    - Generated on demand
+    - Not permanently stored
+    - Logged for audit
+    """
+    user_id = session['user_id']
+    data = request.get_json()
+    
+    # Date range for export
+    start_date = data.get('start_date')
+    end_date = data.get('end_date', date.today().isoformat())
+    
+    if not start_date:
+        # Default to last 30 days
+        start_date = (date.today() - timedelta(days=30)).isoformat()
+    
+    # Query pockets
+    pockets = PrivatePocket.query.filter(
+        PrivatePocket.client_id == user_id,
+        PrivatePocket.date >= start_date,
+        PrivatePocket.date <= end_date
+    ).order_by(PrivatePocket.date, PrivatePocket.pocket_number).all()
+    
+    if not pockets:
+        return jsonify({'error': 'No data found for the specified date range'}), 404
+    
+    # Get user info
+    user = User.query.get(user_id)
+    
+    # Create PDF in memory (not stored on server - PRD 1.3)
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    story = []
+    styles = getSampleStyleSheet()
+    
+    # Custom styles
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=24,
+        spaceAfter=30
     )
-
-    return render_template('client/triggers.html',
-                           user=user,
-                           triggers=triggers)
-
-
-@client_bp.route('/triggers/add', methods=['GET', 'POST'])
-@client_required
-def add_trigger():
-    """Add a new trigger"""
-    user = User.query.get(session['user_id'])
-    relationship = ClientTherapistRelationship.query.filter_by(
-        client_id=user.user_id,
-        status=RelationshipStatus.ACTIVE
-    ).first()
-
-    if not relationship:
-        flash('You need an active therapist relationship to log triggers.', 'warning')
-        return redirect(url_for('client.dashboard'))
-
-    if request.method == 'POST':
-        trigger_description = request.form.get('trigger_description', '').strip()
-        trigger_type = request.form.get('trigger_type', '').strip()
-        intensity_level = request.form.get('intensity_level', 5, type=int)
-        physical_symptoms = request.form.get('physical_symptoms', '').strip()
-        emotional_response = request.form.get('emotional_response', '').strip()
-        coping_strategy_used = request.form.get('coping_strategy_used', '').strip()
-        coping_effectiveness = request.form.get('coping_effectiveness', type=int)
-        location = request.form.get('location', '').strip()
-        time_of_day = request.form.get('time_of_day', '').strip()
-
-        if not trigger_description:
-            flash('Trigger description is required.', 'danger')
-            return render_template('client/add_trigger.html', user=user)
-
-        trigger = Trigger(
-            client_id=user.user_id,
-            relationship_id=relationship.relationship_id,
-            trigger_description=trigger_description,
-            trigger_type=trigger_type,
-            intensity_level=intensity_level,
-            physical_symptoms=physical_symptoms,
-            emotional_response=emotional_response,
-            coping_strategy_used=coping_strategy_used,
-            coping_effectiveness=coping_effectiveness,
-            location=location,
-            time_of_day=time_of_day
-        )
-
-        db.session.add(trigger)
-        db.session.commit()
-
-        perform_sentiment_analysis(trigger, emotional_response, intensity_level)
-
-        log_activity(user.user_id, 'trigger_logged', 'trigger',
-                     trigger.trigger_id, 'New trigger documented')
-
-        flash('Trigger logged successfully!', 'success')
-        return redirect(url_for('client.triggers'))
-
-    return render_template('client/add_trigger.html', user=user)
-
-
-def perform_sentiment_analysis(trigger, emotional_response, intensity_level):
-    """Simplified sentiment analysis for triggers"""
-    anxiety_keywords = ['anxious', 'worried', 'nervous', 'panic', 'fear']
-    depression_keywords = ['sad', 'depressed', 'hopeless', 'empty', 'numb']
-    anger_keywords = ['angry', 'frustrated', 'irritated', 'rage']
-
-    emotional_text = emotional_response.lower()
-
-    primary_emotion = 'neutral'
-    anxiety_score = 0.0
-    depression_score = 0.0
-    crisis_flag = False
-
-    if any(keyword in emotional_text for keyword in anxiety_keywords):
-        primary_emotion = 'anxiety'
-        anxiety_score = min(intensity_level / 10.0, 1.0)
-
-    if any(keyword in emotional_text for keyword in depression_keywords):
-        if anxiety_score < 0.5:
-            primary_emotion = 'depression'
-        depression_score = min(intensity_level / 10.0, 1.0)
-
-    if any(keyword in emotional_text for keyword in anger_keywords):
-        if anxiety_score < 0.3 and depression_score < 0.3:
-            primary_emotion = 'anger'
-
-    crisis_keywords = ['suicide', 'kill myself', 'end it', 'self-harm', 'hurt myself']
-    if any(keyword in emotional_text for keyword in crisis_keywords):
-        crisis_flag = True
-
-    if intensity_level >= 8 or anxiety_score >= 0.8:
-        crisis_flag = True
-
-    sentiment = TriggerSentimentAnalysis(
-        trigger_id=trigger.trigger_id,
-        primary_emotion=primary_emotion,
-        emotion_confidence=0.7,
-        anxiety_score=anxiety_score,
-        depression_score=depression_score,
-        crisis_flag=crisis_flag,
-        requires_therapist_review=crisis_flag or intensity_level >= 7
+    
+    date_style = ParagraphStyle(
+        'DateStyle',
+        parent=styles['Heading2'],
+        fontSize=14,
+        spaceAfter=10
     )
-
-    db.session.add(sentiment)
+    
+    # Title
+    story.append(Paragraph("MindBridge - 7 Pockets Export", title_style))
+    story.append(Paragraph(f"User: {user.first_name} {user.last_name}", styles['Normal']))
+    story.append(Paragraph(f"Export Date: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}", styles['Normal']))
+    story.append(Paragraph(f"Period: {start_date} to {end_date}", styles['Normal']))
+    story.append(Spacer(1, 0.5*inch))
+    
+    # Group by date
+    current_date = None
+    for pocket in pockets:
+        if current_date != pocket.date:
+            if current_date is not None:
+                story.append(Spacer(1, 0.3*inch))
+            current_date = pocket.date
+            story.append(Paragraph(f"Date: {pocket.date.strftime('%A, %B %d, %Y')}", date_style))
+        
+        # Decrypt and add content
+        content = decrypt_content(pocket.content)
+        story.append(Paragraph(f"<b>Pocket {pocket.pocket_number}:</b>", styles['Normal']))
+        story.append(Paragraph(content, styles['BodyText']))
+        story.append(Spacer(1, 0.2*inch))
+    
+    # Build PDF
+    doc.build(story)
+    buffer.seek(0)
+    
+    # Log export activity (PRD 1.3 - audit logging)
+    log = ActivityLog(
+        user_id=user_id,
+        action_type='data_export',
+        resource_type='private_pockets',
+        description=f'Exported pockets from {start_date} to {end_date}',
+        ip_address=request.remote_addr,
+        user_agent=request.headers.get('User-Agent', '')[:500]
+    )
+    db.session.add(log)
     db.session.commit()
-
-    if crisis_flag:
-        relationship = ClientTherapistRelationship.query.get(trigger.relationship_id)
-        notification = Notification(
-            user_id=relationship.therapist_id,
-            notification_type='crisis_alert',
-            title='URGENT: Crisis Alert',
-            message=f'{User.query.get(trigger.client_id).get_full_name()} logged a high-severity trigger. Immediate attention required.',
-            related_entity_type='trigger',
-            related_entity_id=trigger.trigger_id
-        )
-        db.session.add(notification)
-        db.session.commit()
-
-
-@client_bp.route('/journal')
-@client_required
-def journal():
-    """View journal entries"""
-    user = User.query.get(session['user_id'])
-
-    page = request.args.get('page', 1, type=int)
-    notes = SessionNote.query.filter_by(
-        client_id=user.user_id
-    ).order_by(desc(SessionNote.created_at)).paginate(
-        page=page, per_page=10, error_out=False
+    
+    # Return PDF (not stored on server)
+    return send_file(
+        buffer,
+        mimetype='application/pdf',
+        as_attachment=True,
+        download_name=f'mindbridge_pockets_{start_date}_to_{end_date}.pdf'
     )
 
-    return render_template('client/journal.html',
-                           user=user,
-                           notes=notes)
+# ========================================
+# ACCOUNT DELETION
+# PRD 1.4: Right to Erasure
+# ========================================
 
-
-@client_bp.route('/journal/add', methods=['GET', 'POST'])
-@client_required
-def add_journal_entry():
-    """Add a journal entry"""
-    user = User.query.get(session['user_id'])
-    relationship = ClientTherapistRelationship.query.filter_by(
-        client_id=user.user_id,
-        status=RelationshipStatus.ACTIVE
-    ).first()
-
-    if not relationship:
-        flash('You need an active therapist relationship to create journal entries.', 'warning')
-        return redirect(url_for('client.dashboard'))
-
-    if request.method == 'POST':
-        note_type = request.form.get('note_type', 'between_session')
-        title = request.form.get('title', '').strip()
-        content = request.form.get('content', '').strip()
-        mood_before = request.form.get('mood_before', type=int)
-        mood_after = request.form.get('mood_after', type=int)
-        share_with_therapist = request.form.get('share_with_therapist', False)
-
-        if not content:
-            flash('Content is required.', 'danger')
-            return render_template('client/add_journal_entry.html', user=user)
-
-        note = SessionNote(
-            client_id=user.user_id,
-            relationship_id=relationship.relationship_id,
-            note_type=NoteType(note_type),
-            title=title,
-            content=content,
-            mood_before=mood_before,
-            mood_after=mood_after,
-            is_shared_with_therapist=bool(share_with_therapist)
+@client_bp.route('/account/delete', methods=['DELETE'])
+@require_client()
+def delete_account():
+    """
+    Delete user account and all associated data
+    PRD 1.4: Account Deletion (Right to Erasure)
+    - Permanent removal within retention window
+    - All associated data deleted
+    """
+    user_id = session['user_id']
+    data = request.get_json()
+    
+    # Require password confirmation
+    if not data.get('password'):
+        return jsonify({'error': 'Password confirmation required'}), 400
+    
+    user = User.query.get(user_id)
+    
+    # Import from auth blueprint
+    from blueprints.auth import verify_password
+    
+    if not verify_password(data['password'], user.password_hash):
+        return jsonify({'error': 'Invalid password'}), 401
+    
+    try:
+        # Log deletion before deleting user
+        log = ActivityLog(
+            user_id=user_id,
+            action_type='account_deletion',
+            description='User initiated account deletion',
+            ip_address=request.remote_addr,
+            user_agent=request.headers.get('User-Agent', '')[:500]
         )
-
-        if bool(share_with_therapist):
-            note.shared_date = datetime.utcnow()
-
-        db.session.add(note)
+        db.session.add(log)
         db.session.commit()
-
-        log_activity(user.user_id, 'journal_entry_created', 'session_note',
-                     note.note_id, 'New journal entry')
-
-        flash('Journal entry added successfully!', 'success')
-        return redirect(url_for('client.journal'))
-
-    return render_template('client/add_journal_entry.html', user=user)
-
-
-@client_bp.route('/prompts')
-@client_required
-def prompts():
-    """View therapeutic prompts"""
-    user = User.query.get(session['user_id'])
-    relationship = ClientTherapistRelationship.query.filter_by(
-        client_id=user.user_id,
-        status=RelationshipStatus.ACTIVE
-    ).first()
-
-    prompts = []
-    if relationship:
-        prompts = TherapeuticPrompt.query.filter_by(
-            relationship_id=relationship.relationship_id,
-            is_active=True
-        ).order_by(TherapeuticPrompt.deadline_date).all()
-
-    responded_prompt_ids = [r.prompt_id for r in PromptResponse.query.filter_by(
-        client_id=user.user_id
-    ).all()]
-
-    return render_template('client/prompts.html',
-                           user=user,
-                           prompts=prompts,
-                           responded_prompt_ids=responded_prompt_ids)
-
-
-@client_bp.route('/prompts/<int:prompt_id>/respond', methods=['GET', 'POST'])
-@client_required
-def respond_to_prompt(prompt_id):
-    """Respond to a therapeutic prompt"""
-    user = User.query.get(session['user_id'])
-    prompt = TherapeuticPrompt.query.get_or_404(prompt_id)
-
-    existing_response = PromptResponse.query.filter_by(
-        prompt_id=prompt_id,
-        client_id=user.user_id
-    ).first()
-
-    if existing_response:
-        flash('You have already responded to this prompt.', 'info')
-        return redirect(url_for('client.prompts'))
-
-    if request.method == 'POST':
-        response_content = request.form.get('response_content', '').strip()
-        insights_gained = request.form.get('insights_gained', '').strip()
-        emotional_state = request.form.get('emotional_state', 'neutral')
-        share_with_therapist = request.form.get('share_with_therapist', True)
-
-        if not response_content:
-            flash('Response content is required.', 'danger')
-            return render_template('client/respond_to_prompt.html', user=user, prompt=prompt)
-
-        response = PromptResponse(
-            prompt_id=prompt_id,
-            client_id=user.user_id,
-            relationship_id=prompt.relationship_id,
-            response_content=response_content,
-            insights_gained=insights_gained,
-            emotional_state=emotional_state,
-            is_shared_with_therapist=bool(share_with_therapist)
-        )
-
-        if bool(share_with_therapist):
-            response.shared_date = datetime.utcnow()
-
-        db.session.add(response)
+        
+        # Delete user (CASCADE will handle related data)
+        db.session.delete(user)
         db.session.commit()
+        
+        # Clear session
+        session.clear()
+        
+        return jsonify({
+            'message': 'Account deleted successfully',
+            'note': 'All personal data has been permanently removed'
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Account deletion failed: {str(e)}'}), 500
 
-        log_activity(user.user_id, 'prompt_response_created', 'prompt_response',
-                     response.response_id, f'Responded to prompt: {prompt.title}')
+# ========================================
+# PRIVACY SETTINGS
+# PRD 2.3: Data Minimization & 2.4: Data Retention
+# ========================================
 
-        if bool(share_with_therapist):
-            notification = Notification(
-                user_id=prompt.therapist_id,
-                notification_type='prompt_response',
-                title='New Prompt Response',
-                message=f'{user.get_full_name()} responded to your prompt: {prompt.title}',
-                related_entity_type='prompt_response',
-                related_entity_id=response.response_id
-            )
-            db.session.add(notification)
-            db.session.commit()
+@client_bp.route('/privacy/settings', methods=['GET'])
+@require_client()
+def get_privacy_settings():
+    """Get current privacy settings"""
+    user_id = session['user_id']
+    
+    settings = UserPrivacySetting.query.filter_by(user_id=user_id).first()
+    
+    if not settings:
+        return jsonify({'error': 'Privacy settings not found'}), 404
+    
+    return jsonify({
+        'allow_data_analytics': settings.allow_data_analytics,
+        'allow_session_recordings': settings.allow_session_recordings,
+        'share_progress_with_therapist': settings.share_progress_with_therapist,
+        'encrypted_storage_preference': settings.encrypted_storage_preference,
+        'data_retention_days': settings.data_retention_days,
+        'last_updated': settings.last_updated.isoformat()
+    }), 200
 
-        flash('Response submitted successfully!', 'success')
-        return redirect(url_for('client.prompts'))
+@client_bp.route('/privacy/settings', methods=['PUT'])
+@require_client()
+def update_privacy_settings():
+    """
+    Update privacy settings
+    PRD 2.3: Data Minimization
+    """
+    user_id = session['user_id']
+    data = request.get_json()
+    
+    settings = UserPrivacySetting.query.filter_by(user_id=user_id).first()
+    
+    if not settings:
+        return jsonify({'error': 'Privacy settings not found'}), 404
+    
+    # Update allowed fields
+    if 'allow_data_analytics' in data:
+        settings.allow_data_analytics = data['allow_data_analytics']
+    if 'allow_session_recordings' in data:
+        settings.allow_session_recordings = data['allow_session_recordings']
+    if 'share_progress_with_therapist' in data:
+        settings.share_progress_with_therapist = data['share_progress_with_therapist']
+    if 'data_retention_days' in data:
+        # Validate retention period
+        retention = data['data_retention_days']
+        if retention < 30 or retention > 3650:  # 30 days to 10 years
+            return jsonify({'error': 'Retention days must be between 30 and 3650'}), 400
+        settings.data_retention_days = retention
+    
+    settings.last_updated = datetime.utcnow()
+    db.session.commit()
+    
+    # Log privacy update
+    log = ActivityLog(
+        user_id=user_id,
+        action_type='privacy_update',
+        description='Privacy settings updated',
+        ip_address=request.remote_addr
+    )
+    db.session.add(log)
+    db.session.commit()
+    
+    return jsonify({'message': 'Privacy settings updated successfully'}), 200
 
-    return render_template('client/respond_to_prompt.html', user=user, prompt=prompt)
+# ========================================
+# DASHBOARD / PROFILE
+# ========================================
+
+@client_bp.route('/dashboard', methods=['GET'])
+@require_client()
+def get_dashboard():
+    """Get client dashboard overview"""
+    user_id = session['user_id']
+    
+    # Recent pockets count
+    recent_pockets = PrivatePocket.query.filter(
+        PrivatePocket.client_id == user_id,
+        PrivatePocket.date >= date.today() - timedelta(days=7)
+    ).count()
+    
+    # Recent capsules count
+    recent_capsules = Capsule.query.filter(
+        Capsule.client_id == user_id,
+        Capsule.created_at >= datetime.utcnow() - timedelta(days=7)
+    ).count()
+    
+    # Crisis events count (last 30 days)
+    crisis_count = CrisisEvent.query.filter(
+        CrisisEvent.client_id == user_id,
+        CrisisEvent.created_at >= datetime.utcnow() - timedelta(days=30)
+    ).count()
+    
+    return jsonify({
+        'recent_pockets': recent_pockets,
+        'recent_capsules': recent_capsules,
+        'crisis_events_30d': crisis_count
+    }), 200
