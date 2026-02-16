@@ -1,12 +1,14 @@
-from flask import Blueprint, request, jsonify, session
-from models import (db, User, ClientTherapistRelationship, Capsule, Message, 
+from flask import Blueprint, request, jsonify, session, render_template, redirect
+from models import (db, User, ClientTherapistRelationship, Capsule, Message,
                     TherapeuticPrompt, PromptResponse, Notification, ActivityLog)
 from datetime import datetime, date
 
 therapist_bp = Blueprint('therapist', __name__)
 
+
 def require_therapist():
     """Decorator to require therapist user type"""
+
     def decorator(f):
         def wrapper(*args, **kwargs):
             if 'user_id' not in session:
@@ -14,25 +16,56 @@ def require_therapist():
             if session.get('user_type') != 'therapist':
                 return jsonify({'error': 'Therapist access only'}), 403
             return f(*args, **kwargs)
+
         wrapper.__name__ = f.__name__
         return wrapper
+
     return decorator
 
+
 # ========================================
-# CLIENT RELATIONSHIPS
+# TEMPLATE ROUTES (GET)
 # ========================================
 
+@therapist_bp.route('/dashboard', methods=['GET'])
+def dashboard_page():
+    """Show therapist dashboard"""
+    if 'user_id' not in session or session.get('user_type') != 'therapist':
+        return redirect('/auth/login')
+    return render_template('therapist/dashboard.html')
+
+
 @therapist_bp.route('/clients', methods=['GET'])
+def clients_page():
+    """Show clients list page"""
+    if 'user_id' not in session or session.get('user_type') != 'therapist':
+        return redirect('/auth/login')
+    return render_template('therapist/clients.html')
+
+
+@therapist_bp.route('/create-prompt', methods=['GET'])
+def create_prompt_page():
+    """Show create prompt form"""
+    if 'user_id' not in session or session.get('user_type') != 'therapist':
+        return redirect('/auth/login')
+    return render_template('therapist/create_prompt.html')
+
+
+# ========================================
+# CLIENT RELATIONSHIPS (API)
+# ========================================
+
+@therapist_bp.route('/api/clients', methods=['GET'])
 @require_therapist()
 def get_clients():
     """Get all clients for this therapist"""
     therapist_id = session['user_id']
-    
+
     relationships = ClientTherapistRelationship.query.filter_by(
         therapist_id=therapist_id,
         status='active'
     ).all()
-    
+
     clients = []
     for rel in relationships:
         client = User.query.get(rel.client_id)
@@ -45,33 +78,34 @@ def get_clients():
             'relationship_start': rel.relationship_start_date.isoformat(),
             'client_goals': rel.client_goals
         })
-    
+
     return jsonify({'clients': clients}), 200
+
 
 @therapist_bp.route('/clients/<int:client_id>', methods=['GET'])
 @require_therapist()
 def get_client_detail(client_id):
     """Get detailed info for a specific client"""
     therapist_id = session['user_id']
-    
+
     # Verify relationship exists
     relationship = ClientTherapistRelationship.query.filter_by(
         therapist_id=therapist_id,
         client_id=client_id,
         status='active'
     ).first()
-    
+
     if not relationship:
         return jsonify({'error': 'Client relationship not found'}), 404
-    
+
     client = User.query.get(client_id)
-    
+
     # Get recent capsules
     recent_capsules = Capsule.query.filter_by(
         client_id=client_id,
         therapist_id=therapist_id
     ).order_by(Capsule.created_at.desc()).limit(10).all()
-    
+
     return jsonify({
         'client': {
             'client_id': client.user_id,
@@ -95,31 +129,33 @@ def get_client_detail(client_id):
         } for c in recent_capsules]
     }), 200
 
+
 @therapist_bp.route('/clients/<int:client_id>/notes', methods=['PUT'])
 @require_therapist()
 def update_client_notes(client_id):
     """Update therapist notes for a client"""
     therapist_id = session['user_id']
     data = request.get_json()
-    
+
     relationship = ClientTherapistRelationship.query.filter_by(
         therapist_id=therapist_id,
         client_id=client_id,
         status='active'
     ).first()
-    
+
     if not relationship:
         return jsonify({'error': 'Client relationship not found'}), 404
-    
+
     if 'therapist_notes' in data:
         relationship.therapist_notes = data['therapist_notes']
     if 'client_goals' in data:
         relationship.client_goals = data['client_goals']
-    
+
     relationship.updated_at = datetime.utcnow()
     db.session.commit()
-    
+
     return jsonify({'message': 'Notes updated successfully'}), 200
+
 
 # ========================================
 # CAPSULES (View Client Capsules)
@@ -130,14 +166,14 @@ def update_client_notes(client_id):
 def get_therapist_capsules():
     """Get all capsules for therapist's clients"""
     therapist_id = session['user_id']
-    
+
     status = request.args.get('status', 'sealed')  # Default to sealed only
-    
+
     capsules = Capsule.query.filter_by(
         therapist_id=therapist_id,
         status=status
     ).order_by(Capsule.created_at.desc()).limit(50).all()
-    
+
     return jsonify({
         'capsules': [{
             'capsule_id': c.capsule_id,
@@ -150,25 +186,26 @@ def get_therapist_capsules():
         } for c in capsules]
     }), 200
 
+
 @therapist_bp.route('/capsules/<int:capsule_id>', methods=['GET'])
 @require_therapist()
 def get_capsule_detail(capsule_id):
     """Get capsule details with messages"""
     therapist_id = session['user_id']
-    
+
     capsule = Capsule.query.filter_by(
         capsule_id=capsule_id,
         therapist_id=therapist_id
     ).first()
-    
+
     if not capsule:
         return jsonify({'error': 'Capsule not found'}), 404
-    
+
     # Get messages
     messages = Message.query.filter_by(
         capsule_id=capsule_id
     ).order_by(Message.created_at).all()
-    
+
     return jsonify({
         'capsule': {
             'capsule_id': capsule.capsule_id,
@@ -187,6 +224,7 @@ def get_capsule_detail(capsule_id):
         } for m in messages]
     }), 200
 
+
 # ========================================
 # THERAPEUTIC PROMPTS
 # ========================================
@@ -197,21 +235,21 @@ def create_prompt():
     """Create a therapeutic prompt for a client"""
     therapist_id = session['user_id']
     data = request.get_json()
-    
+
     required = ['relationship_id', 'prompt_type', 'title', 'description', 'prompt_content']
     if not all(field in data for field in required):
         return jsonify({'error': 'Missing required fields'}), 400
-    
+
     # Verify relationship
     relationship = ClientTherapistRelationship.query.filter_by(
         relationship_id=data['relationship_id'],
         therapist_id=therapist_id,
         status='active'
     ).first()
-    
+
     if not relationship:
         return jsonify({'error': 'Invalid relationship'}), 404
-    
+
     try:
         prompt = TherapeuticPrompt(
             therapist_id=therapist_id,
@@ -230,7 +268,7 @@ def create_prompt():
         )
         db.session.add(prompt)
         db.session.commit()
-        
+
         # Create notification for client
         notification = Notification(
             user_id=relationship.client_id,
@@ -242,27 +280,28 @@ def create_prompt():
         )
         db.session.add(notification)
         db.session.commit()
-        
+
         return jsonify({
             'message': 'Prompt created successfully',
             'prompt_id': prompt.prompt_id
         }), 201
-        
+
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': f'Failed to create prompt: {str(e)}'}), 500
+
 
 @therapist_bp.route('/prompts', methods=['GET'])
 @require_therapist()
 def get_prompts():
     """Get all prompts created by this therapist"""
     therapist_id = session['user_id']
-    
+
     prompts = TherapeuticPrompt.query.filter_by(
         therapist_id=therapist_id,
         is_active=True
     ).order_by(TherapeuticPrompt.created_at.desc()).all()
-    
+
     return jsonify({
         'prompts': [{
             'prompt_id': p.prompt_id,
@@ -275,26 +314,27 @@ def get_prompts():
         } for p in prompts]
     }), 200
 
+
 @therapist_bp.route('/prompts/<int:prompt_id>/responses', methods=['GET'])
 @require_therapist()
 def get_prompt_responses(prompt_id):
     """Get responses to a specific prompt"""
     therapist_id = session['user_id']
-    
+
     # Verify prompt belongs to therapist
     prompt = TherapeuticPrompt.query.filter_by(
         prompt_id=prompt_id,
         therapist_id=therapist_id
     ).first()
-    
+
     if not prompt:
         return jsonify({'error': 'Prompt not found'}), 404
-    
+
     responses = PromptResponse.query.filter_by(
         prompt_id=prompt_id,
         is_shared_with_therapist=True
     ).order_by(PromptResponse.response_date.desc()).all()
-    
+
     return jsonify({
         'prompt': {
             'prompt_id': prompt.prompt_id,
@@ -312,30 +352,31 @@ def get_prompt_responses(prompt_id):
         } for r in responses]
     }), 200
 
+
 @therapist_bp.route('/prompts/responses/<int:response_id>/feedback', methods=['PUT'])
 @require_therapist()
 def add_response_feedback(response_id):
     """Add feedback to a client's prompt response"""
     therapist_id = session['user_id']
     data = request.get_json()
-    
+
     response = PromptResponse.query.get(response_id)
     if not response:
         return jsonify({'error': 'Response not found'}), 404
-    
+
     # Verify therapist owns the prompt
     prompt = TherapeuticPrompt.query.filter_by(
         prompt_id=response.prompt_id,
         therapist_id=therapist_id
     ).first()
-    
+
     if not prompt:
         return jsonify({'error': 'Unauthorized'}), 403
-    
+
     response.therapist_feedback = data.get('feedback')
     response.updated_at = datetime.utcnow()
     db.session.commit()
-    
+
     # Notify client
     notification = Notification(
         user_id=response.client_id,
@@ -347,8 +388,9 @@ def add_response_feedback(response_id):
     )
     db.session.add(notification)
     db.session.commit()
-    
+
     return jsonify({'message': 'Feedback added successfully'}), 200
+
 
 # ========================================
 # DASHBOARD
@@ -359,26 +401,26 @@ def add_response_feedback(response_id):
 def get_dashboard():
     """Get therapist dashboard overview"""
     therapist_id = session['user_id']
-    
+
     # Active clients
     active_clients = ClientTherapistRelationship.query.filter_by(
         therapist_id=therapist_id,
         status='active'
     ).count()
-    
+
     # Pending responses
     pending_responses = PromptResponse.query.join(TherapeuticPrompt).filter(
         TherapeuticPrompt.therapist_id == therapist_id,
         PromptResponse.is_shared_with_therapist == True,
         PromptResponse.therapist_feedback == None
     ).count()
-    
+
     # Recent capsules
     recent_capsules = Capsule.query.filter_by(
         therapist_id=therapist_id,
         status='sealed'
     ).order_by(Capsule.sealed_at.desc()).limit(5).all()
-    
+
     return jsonify({
         'active_clients': active_clients,
         'pending_responses': pending_responses,

@@ -1,97 +1,48 @@
-<!-- templates/crisis/techniques.html -->
 {% extends "base.html" %}
-{% block title %}De-escalation Techniques - MindBridge{% endblock %}
+
+{% block title %}Deescalation Techniques - MindBridge{% endblock %}
+
 {% block content %}
-<h1 class="mb-4"><i class="bi bi-heart-pulse"></i> De-escalation Techniques</h1>
+<div class="container">
+    <div class="card">
+        <div class="card-header">
+            <h1>🧘 Deescalation Techniques</h1>
+            <p style="color: var(--text-muted);">Evidence-based techniques for managing intense emotions</p>
+        </div>
 
-<div class="alert alert-info">
-    <p class="mb-0"><i class="bi bi-info-circle"></i> These evidence-based techniques can help you manage intense emotions, anxiety, panic, and other crisis moments. Click on any technique to see detailed instructions.</p>
-</div>
+        <div class="grid grid-2">
+            <div class="card" style="border-left: 4px solid var(--success);">
+                <h3>🌬️ 5-4-3-2-1 Grounding</h3>
+                <p><strong>Category:</strong> Grounding</p>
+                <p><strong>Duration:</strong> 5-10 minutes</p>
+                <p>Use your senses to connect with the present moment.</p>
+                <a href="/crisis/technique-detail/1" class="btn btn-primary">View Details</a>
+            </div>
 
-<!-- Filter Options -->
-<div class="card mb-4">
-    <div class="card-body">
-        <form method="GET" class="row g-3">
-            <div class="col-md-6">
-                <label for="category" class="form-label">Filter by Category</label>
-                <select class="form-select" id="category" name="category" onchange="this.form.submit()">
-                    <option value="">All Categories</option>
-                    <option value="grounding" {% if selected_category == 'grounding' %}selected{% endif %}>Grounding</option>
-                    <option value="breathing" {% if selected_category == 'breathing' %}selected{% endif %}>Breathing</option>
-                    <option value="mindfulness" {% if selected_category == 'mindfulness' %}selected{% endif %}>Mindfulness</option>
-                    <option value="distraction" {% if selected_category == 'distraction' %}selected{% endif %}>Distraction</option>
-                    <option value="physical" {% if selected_category == 'physical' %}selected{% endif %}>Physical</option>
-                    <option value="emotional_regulation" {% if selected_category == 'emotional_regulation' %}selected{% endif %}>Emotional Regulation</option>
-                    <option value="thought_challenging" {% if selected_category == 'thought_challenging' %}selected{% endif %}>Thought Challenging</option>
-                </select>
+            <div class="card" style="border-left: 4px solid var(--primary);">
+                <h3>💨 Box Breathing</h3>
+                <p><strong>Category:</strong> Breathing</p>
+                <p><strong>Duration:</strong> 3-5 minutes</p>
+                <p>Calm your nervous system with controlled breathing.</p>
+                <a href="/crisis/technique-detail/2" class="btn btn-primary">View Details</a>
             </div>
-            <div class="col-md-6">
-                <label for="difficulty" class="form-label">Filter by Difficulty</label>
-                <select class="form-select" id="difficulty" name="difficulty" onchange="this.form.submit()">
-                    <option value="">All Levels</option>
-                    <option value="beginner" {% if selected_difficulty == 'beginner' %}selected{% endif %}>Beginner</option>
-                    <option value="intermediate" {% if selected_difficulty == 'intermediate' %}selected{% endif %}>Intermediate</option>
-                    <option value="advanced" {% if selected_difficulty == 'advanced' %}selected{% endif %}>Advanced</option>
-                </select>
+
+            <div class="card" style="border-left: 4px solid var(--accent);">
+                <h3>🧊 Ice Dive</h3>
+                <p><strong>Category:</strong> Physical</p>
+                <p><strong>Duration:</strong> 2-3 minutes</p>
+                <p>Use cold water to quickly reduce emotional intensity.</p>
+                <a href="/crisis/technique-detail/3" class="btn btn-primary">View Details</a>
             </div>
-        </form>
+
+            <div class="card" style="border-left: 4px solid var(--warning);">
+                <h3>🎯 TIPP Skills</h3>
+                <p><strong>Category:</strong> Emotional Regulation</p>
+                <p><strong>Duration:</strong> 5-15 minutes</p>
+                <p>Temperature, Intense exercise, Paced breathing, Paired muscle relaxation.</p>
+                <a href="/crisis/technique-detail/4" class="btn btn-primary">View Details</a>
+            </div>
+        </div>
     </div>
-</div>
-
-<!-- Techniques Grid -->
-<div class="row">
-    {% if techniques %}
-        {% for technique in techniques %}
-        <div class="col-md-6 mb-4">
-            <div class="card h-100">
-                <div class="card-header">
-                    <h5 class="mb-0">{{ technique.technique_name }}</h5>
-                    <div class="mt-2">
-                        <span class="badge bg-primary">{{ technique.technique_category.value.replace('_', ' ').title() }}</span>
-                        <span class="badge {% if technique.difficulty_level.value == 'beginner' %}bg-success{% elif technique.difficulty_level.value == 'intermediate' %}bg-warning{% else %}bg-danger{% endif %}">
-                            {{ technique.difficulty_level.value.title() }}
-                        </span>
-                        <span class="badge bg-info">{{ technique.estimated_duration_minutes }} min</span>
-                    </div>
-                </div>
-                <div class="card-body">
-                    <p>{{ technique.description }}</p>
-
-                    {% if technique.best_for %}
-                    <div class="mb-3">
-                        <small class="text-muted"><strong>Best for:</strong></small>
-                        <div>
-                            {% for crisis_type in technique.best_for %}
-                                <span class="badge bg-secondary me-1">{{ crisis_type.replace('_', ' ').title() }}</span>
-                            {% endfor %}
-                        </div>
-                    </div>
-                    {% endif %}
-
-                    <a href="{{ url_for('crisis.technique_detail', technique_id=technique.technique_id) }}"
-                       class="btn btn-primary w-100">
-                        <i class="bi bi-eye"></i> View Instructions
-                    </a>
-                </div>
-            </div>
-        </div>
-        {% endfor %}
-    {% else %}
-        <div class="col-12">
-            <div class="alert alert-info">
-                <p class="mb-0">No techniques found matching your filters. Try adjusting your selection.</p>
-            </div>
-        </div>
-    {% endif %}
-</div>
-
-<div class="alert alert-warning mt-4">
-    <h5><i class="bi bi-lightbulb"></i> Tips for Using These Techniques</h5>
-    <ul class="mb-0">
-        <li>Practice techniques when you're calm so they're easier to use during a crisis</li>
-        <li>Different techniques work for different people - try several to find what works for you</li>
-        <li>Track which techniques are most effective using the logging feature</li>
-        <li>Share your experiences with your therapist to refine your coping strategies</li>
-    </ul>
 </div>
 {% endblock %}

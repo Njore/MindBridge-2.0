@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, session
+from flask import Blueprint, request, jsonify, session, render_template, redirect
 from models import db, User, ConsentAgreement, UserPrivacySetting, ActivityLog
 from datetime import datetime
 import bcrypt
@@ -36,39 +36,97 @@ def log_activity(user_id, action_type, description, ip_address=None):
     db.session.commit()
 
 
+# Template GET routes
+@auth_bp.route('/register', methods=['GET'])
+def register_page():
+    """Show registration form"""
+    return render_template('auth/register.html')
+
+
+@auth_bp.route('/login', methods=['GET'])
+def login_page():
+    """Show login form"""
+    return render_template('auth/login.html')
+
+
+@auth_bp.route('/profile', methods=['GET'])
+def profile():
+    """Show user profile"""
+    if 'user_id' not in session:
+        return redirect('/auth/login')
+    user = User.query.get(session['user_id'])
+    return render_template('auth/profile.html', user=user)
+
+
+@auth_bp.route('/logout', methods=['GET'])
+def logout_page():
+    """Logout user"""
+    user_id = session.get('user_id')
+    if user_id:
+        log_activity(user_id, 'logout', 'User logged out')
+    session.clear()
+    return redirect('/')
+
+
+# API routes
 @auth_bp.route('/register', methods=['POST'])
 def register():
     """
     Register new user with explicit consent
     PRD: 1.1 Explicit User Consent
     """
-    data = request.get_json()
+    # Handle both JSON and form data
+    if request.is_json:
+        data = request.get_json()
+    else:
+        data = request.form.to_dict()
+        # Convert checkbox values to boolean
+        data['consent_terms'] = 'consent_terms' in request.form
+        data['consent_privacy'] = 'consent_privacy' in request.form
+        data['allow_analytics'] = 'allow_analytics' in request.form
 
     # Validate required fields
     required = ['email', 'password', 'user_type', 'first_name', 'last_name']
     if not all(field in data for field in required):
-        return jsonify({'error': 'Missing required fields'}), 400
+        if request.is_json:
+            return jsonify({'error': 'Missing required fields'}), 400
+        return render_template('auth/register.html', error='Missing required fields'), 400
 
     # Validate consent (PRD 1.1 - No pre-checked boxes)
     if not data.get('consent_terms') or not data.get('consent_privacy'):
-        return jsonify({'error': 'Explicit consent required for Terms of Service and Privacy Policy'}), 400
+        error = 'Explicit consent required for Terms of Service and Privacy Policy'
+        if request.is_json:
+            return jsonify({'error': error}), 400
+        return render_template('auth/register.html', error=error), 400
 
     if data.get('user_type') not in ['client', 'therapist']:
-        return jsonify({'error': 'Invalid user_type'}), 400
+        error = 'Invalid user_type'
+        if request.is_json:
+            return jsonify({'error': error}), 400
+        return render_template('auth/register.html', error=error), 400
 
     # Validate email
     email = data['email'].lower().strip()
     if not validate_email(email):
-        return jsonify({'error': 'Invalid email format'}), 400
+        error = 'Invalid email format'
+        if request.is_json:
+            return jsonify({'error': error}), 400
+        return render_template('auth/register.html', error=error), 400
 
     # Check if email exists
     if User.query.filter_by(email=email).first():
-        return jsonify({'error': 'Email already registered'}), 409
+        error = 'Email already registered'
+        if request.is_json:
+            return jsonify({'error': error}), 409
+        return render_template('auth/register.html', error=error), 409
 
     # Validate password strength
     password = data['password']
     if len(password) < 8:
-        return jsonify({'error': 'Password must be at least 8 characters'}), 400
+        error = 'Password must be at least 8 characters'
+        if request.is_json:
+            return jsonify({'error': error}), 400
+        return render_template('auth/register.html', error=error), 400
 
     try:
         # Create user
@@ -123,53 +181,62 @@ def register():
         # Log registration
         log_activity(user.user_id, 'registration', f"User registered as {data['user_type']}")
 
-        return jsonify({
-            'message': 'Registration successful',
-            'user_id': user.user_id,
-            'email': user.email,
-            'user_type': user.user_type
-        }), 201
+        if request.is_json:
+            return jsonify({
+                'message': 'Registration successful',
+                'user_id': user.user_id,
+                'email': user.email,
+                'user_type': user.user_type
+            }), 201
+        else:
+            # Redirect to login page after successful registration
+            return redirect('/auth/login?registered=true')
 
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': f'Registration failed: {str(e)}'}), 500
+        error = f'Registration failed: {str(e)}'
+        if request.is_json:
+            return jsonify({'error': error}), 500
+        return render_template('auth/register.html', error=error), 500
 
 
 @auth_bp.route('/login', methods=['POST'])
 def login():
     """User login with session management"""
-    data = request.get_json()
+    data = request.get_json() if request.is_json else request.form
 
     if not data.get('email') or not data.get('password'):
-        return jsonify({'error': 'Email and password required'}), 400
+        if request.is_json:
+            return jsonify({'error': 'Email and password required'}), 400
+        return render_template('auth/login.html', error='Email and password required')
 
     email = data['email'].lower().strip()
     user = User.query.filter_by(email=email).first()
 
     if not user or not verify_password(data['password'], user.password_hash):
-        return jsonify({'error': 'Invalid credentials'}), 401
+        if request.is_json:
+            return jsonify({'error': 'Invalid credentials'}), 401
+        return render_template('auth/login.html', error='Invalid credentials')
 
     if not user.is_active:
-        return jsonify({'error': 'Account deactivated'}), 403
+        if request.is_json:
+            return jsonify({'error': 'Account deactivated'}), 403
+        return render_template('auth/login.html', error='Account deactivated')
 
     # Create session (PRD 2.2 - Secure session management)
     session['user_id'] = user.user_id
     session['user_type'] = user.user_type
     session['email'] = user.email
+    session['first_name'] = user.first_name
 
     # Log login
     log_activity(user.user_id, 'login', 'User logged in')
 
-    return jsonify({
-        'message': 'Login successful',
-        'user': {
-            'user_id': user.user_id,
-            'email': user.email,
-            'user_type': user.user_type,
-            'first_name': user.first_name,
-            'last_name': user.last_name
-        }
-    }), 200
+    # Redirect based on user type
+    if user.user_type == 'client':
+        return redirect('/client/dashboard')
+    else:
+        return redirect('/therapist/dashboard')
 
 
 @auth_bp.route('/logout', methods=['POST'])

@@ -1,52 +1,95 @@
-<!-- templates/index.html -->
 {% extends "base.html" %}
 
-{% block content %}
-<div class="row align-items-center min-vh-75">
-    <div class="col-lg-6">
-        <h1 class="display-4 fw-bold mb-4">Welcome to <span style="color: var(--primary-color);">MindBridge</span></h1>
-        <p class="lead mb-4">
-            Connecting the gaps between therapy sessions. A secure platform for continuous therapeutic engagement and mental wellness support.
-        </p>
-        <div class="d-grid gap-2 d-md-flex">
-            <a href="{{ url_for('auth.register') }}" class="btn btn-primary btn-lg px-4">Get Started</a>
-            <a href="{{ url_for('auth.login') }}" class="btn btn-outline-primary btn-lg px-4">Login</a>
-        </div>
-    </div>
-    <div class="col-lg-6">
-        <div class="card p-4">
-            <h3 class="mb-3">Key Features</h3>
-            <div class="list-group list-group-flush">
-                <div class="list-group-item">
-                    <i class="bi bi-chat-dots text-primary"></i> <strong>Secure Messaging</strong><br>
-                    <small class="text-muted">Stay connected with your therapist between sessions</small>
-                </div>
-                <div class="list-group-item">
-                    <i class="bi bi-journal-text text-success"></i> <strong>Digital Journaling</strong><br>
-                    <small class="text-muted">Track breakthroughs, triggers, and progress</small>
-                </div>
-                <div class="list-group-item">
-                    <i class="bi bi-lightbulb text-warning"></i> <strong>Therapeutic Prompts</strong><br>
-                    <small class="text-muted">Guided exercises from your therapist</small>
-                </div>
-                <div class="list-group-item">
-                    <i class="bi bi-shield-check text-danger"></i> <strong>Crisis Support</strong><br>
-                    <small class="text-muted">24/7 access to emergency resources</small>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
+{% block title %}Home - MindBridge{% endblock %}
 
-<div class="alert alert-info mt-5">
-    <h5><i class="bi bi-info-circle"></i> Important Note</h5>
-    <p class="mb-0">MindBridge is designed for clients with an established therapeutic relationship. This platform complements, but does not replace, professional mental health care.</p>
-</div>
+{% block extra_css %}
+<style>
+    .hero {
+        background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+        color: white;
+        padding: 4rem 2rem;
+        text-align: center;
+        border-radius: 12px;
+        margin-bottom: 3rem;
+    }
+
+    .hero h1 {
+        font-size: 3rem;
+        margin-bottom: 1rem;
+    }
+
+    .hero p {
+        font-size: 1.25rem;
+        margin-bottom: 2rem;
+        opacity: 0.95;
+    }
+
+    .features {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 2rem;
+        margin: 3rem 0;
+    }
+
+    .feature-card {
+        background: white;
+        padding: 2rem;
+        border-radius: 12px;
+        text-align: center;
+        box-shadow: 0 2px 10px var(--shadow);
+        transition: transform 0.3s;
+    }
+
+    .feature-card:hover {
+        transform: translateY(-5px);
+    }
+
+    .feature-icon {
+        font-size: 3rem;
+        margin-bottom: 1rem;
+    }
+</style>
 {% endblock %}
 
+{% block content %}
+<div class="container">
+    <div class="hero">
+        <h1>Your Journey to Mental Wellness Starts Here</h1>
+        <p>A safe, secure space for emotional reflection and therapeutic support</p>
+        <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+            <a href="/auth/register" class="btn btn-secondary" style="font-size: 1.1rem; padding: 1rem 2rem;">Begin Your Journey</a>
+            <a href="/crisis/resources" class="btn btn-outline" style="color: white; border-color: white; font-size: 1.1rem; padding: 1rem 2rem;">Crisis Resources</a>
+        </div>
+    </div>
 
+    <section>
+        <h2 style="text-align: center; margin-bottom: 2rem; font-size: 2rem;">How MindBridge Works</h2>
 
+        <div class="features">
+            <div class="feature-card">
+                <div class="feature-icon">🤝</div>
+                <h3>1. Connect</h3>
+                <p>Reach out and get matched with a therapist suited for your needs.</p>
+            </div>
 
+            <div class="feature-card">
+                <div class="feature-icon">🌱</div>
+                <h3>2. Begin</h3>
+                <p>Schedule your first session and start your personalized therapy plan.</p>
+            </div>
 
+            <div class="feature-card">
+                <div class="feature-icon">🧘</div>
+                <h3>3. Heal</h3>
+                <p>Achieve mental wellness through consistent therapy and reflection.</p>
+            </div>
+        </div>
+    </section>
 
-
+    <div class="alert alert-warning">
+        <h4 style="margin-bottom: 0.5rem;">⚠️ Important Notice</h4>
+        <p><strong>MindBridge is a digital emotional wellness platform and is not a substitute for licensed clinical mental health services.</strong></p>
+        <p style="margin-top: 0.5rem;">If you are experiencing a mental health emergency, call Kenya Red Cross at <strong>1199</strong> (24/7).</p>
+    </div>
+</div>
+{% endblock %}

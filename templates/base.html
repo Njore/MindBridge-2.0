@@ -4,37 +4,26 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}MindBridge{% endblock %}</title>
-
-    <!-- Bootstrap CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-
-    <!-- Bootstrap Icons -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
-
-    <!-- Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-
-    <!-- Custom CSS -->
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    
     <style>
         :root {
-            --primary-color: #6366f1;
-            --primary-dark: #4f46e5;
-            --primary-light: #818cf8;
-            --secondary-color: #8b5cf6;
-            --success-color: #10b981;
-            --danger-color: #ef4444;
-            --warning-color: #f59e0b;
-            --info-color: #3b82f6;
-            --dark-bg: #1e293b;
-            --light-bg: #f8fafc;
-            --card-bg: #ffffff;
-            --text-primary: #1e293b;
-            --text-secondary: #64748b;
-            --border-color: #e2e8f0;
-            --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-            --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+            --primary: #8B7B8B;
+            --primary-light: #B5A5B5;
+            --primary-dark: #5D4D5D;
+            --accent: #D4A5A5;
+            --bg-light: #F5F3F0;
+            --bg-white: #FFFFFF;
+            --text-dark: #2C2C2C;
+            --text-muted: #6B6B6B;
+            --border: #E8E4DF;
+            --success: #7BA591;
+            --warning: #D4A574;
+            --danger: #C17B7B;
+            --shadow: rgba(139, 123, 139, 0.1);
         }
 
         * {
@@ -44,536 +33,267 @@
         }
 
         body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            background: #f1f5f9;
-            min-height: 100vh;
-            color: var(--text-primary);
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-light);
+            color: var(--text-dark);
+            line-height: 1.6;
         }
 
-        /* Navbar Styles */
-        .navbar {
-            background: white !important;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-            padding: 1rem 0;
-            border-bottom: 1px solid #e2e8f0;
+        h1, h2, h3, h4, h5, h6 {
+            font-family: 'Playfair Display', serif;
+            font-weight: 600;
+            line-height: 1.2;
         }
 
-        .navbar-brand {
-            font-weight: 700;
-            font-size: 1.5rem;
-            color: var(--primary-color) !important;
+        nav {
+            background: var(--primary);
+            padding: 1rem 2rem;
+            box-shadow: 0 2px 10px var(--shadow);
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+        }
+
+        .nav-container {
+            max-width: 1200px;
+            margin: 0 auto;
             display: flex;
+            justify-content: space-between;
             align-items: center;
-            gap: 0.5rem;
         }
 
-        .navbar-brand i {
-            color: var(--primary-color);
-            font-size: 1.75rem;
+        .logo {
+            font-family: 'Playfair Display', serif;
+            font-size: 1.5rem;
+            color: white;
+            text-decoration: none;
+            font-weight: 600;
         }
 
-        .nav-link {
-            color: var(--text-secondary) !important;
+        .nav-links {
+            display: flex;
+            gap: 2rem;
+            list-style: none;
+        }
+
+        .nav-links a {
+            color: white;
+            text-decoration: none;
+            transition: opacity 0.3s;
             font-weight: 500;
-            transition: all 0.3s ease;
-            position: relative;
-            padding: 0.5rem 1rem !important;
         }
 
-        .nav-link:hover {
-            color: var(--primary-color) !important;
-            transform: translateY(-1px);
+        .nav-links a:hover {
+            opacity: 0.8;
         }
 
-        .nav-link.text-danger:hover {
-            color: var(--danger-color) !important;
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 2rem;
         }
 
-        /* Main Content Area */
-        main.container {
-            background: transparent;
-            padding: 2rem 1rem;
-        }
-
-        /* Card Styles */
         .card {
-            background: var(--card-bg);
-            border: 1px solid var(--border-color);
+            background: var(--bg-white);
             border-radius: 12px;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-            margin-bottom: 1.5rem;
-            overflow: hidden;
-            transition: all 0.3s ease;
-        }
-
-        .card:hover {
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+            padding: 2rem;
+            box-shadow: 0 2px 10px var(--shadow);
+            margin-bottom: 2rem;
         }
 
         .card-header {
-            background: white;
-            color: var(--text-primary);
-            border-bottom: 2px solid var(--border-color);
-            font-weight: 600;
-            padding: 1.25rem 1.5rem;
-            font-size: 1.1rem;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 1rem;
+            margin-bottom: 1.5rem;
         }
 
-        .card-body {
-            padding: 1.5rem;
+        .card-header h2 {
+            color: var(--primary-dark);
         }
 
-        /* Button Styles */
         .btn {
+            padding: 0.75rem 1.5rem;
             border-radius: 8px;
-            padding: 0.625rem 1.5rem;
-            font-weight: 500;
-            transition: all 0.3s ease;
             border: none;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 500;
+            transition: all 0.3s;
+            text-decoration: none;
+            display: inline-block;
         }
 
         .btn-primary {
-            background: var(--primary-color);
-            box-shadow: 0 2px 4px rgba(99, 102, 241, 0.2);
+            background: var(--primary);
+            color: white;
         }
 
         .btn-primary:hover {
             background: var(--primary-dark);
-            box-shadow: 0 4px 8px rgba(99, 102, 241, 0.3);
         }
 
-        .btn-outline-primary {
-            border: 2px solid var(--primary-color);
-            color: var(--primary-color);
-            background: transparent;
-        }
-
-        .btn-outline-primary:hover {
-            background: var(--primary-color);
+        .btn-secondary {
+            background: var(--accent);
             color: white;
-            transform: translateY(-2px);
         }
 
         .btn-success {
-            background: #10b981;
+            background: var(--success);
+            color: white;
         }
 
         .btn-danger {
-            background: #ef4444;
-        }
-
-        .btn-warning {
-            background: #f59e0b;
-        }
-
-        /* Badge Styles */
-        .badge {
-            padding: 0.5em 1em;
-            border-radius: 8px;
-            font-weight: 500;
-            font-size: 0.875rem;
-        }
-
-        /* Crisis Banner */
-        .crisis-banner {
-            background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%);
+            background: var(--danger);
             color: white;
-            padding: 1.5rem;
-            border-radius: 16px;
-            margin-bottom: 2rem;
-            box-shadow: 0 8px 16px rgba(220, 38, 38, 0.3);
-            border: 2px solid rgba(255, 255, 255, 0.2);
         }
 
-        .crisis-banner h5 {
-            font-weight: 700;
+        .btn-outline {
+            background: transparent;
+            border: 2px solid var(--primary);
+            color: var(--primary);
+        }
+
+        .btn-outline:hover {
+            background: var(--primary);
+            color: white;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .form-group label {
+            display: block;
             margin-bottom: 0.5rem;
+            font-weight: 500;
+            color: var(--text-dark);
         }
 
-        /* Alert Styles */
-        .alert {
-            border: 1px solid;
+        .form-control {
+            width: 100%;
+            padding: 0.75rem;
+            border: 2px solid var(--border);
             border-radius: 8px;
+            font-size: 1rem;
+            font-family: 'Inter', sans-serif;
+            transition: border-color 0.3s;
+        }
+
+        .form-control:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+
+        textarea.form-control {
+            min-height: 120px;
+            resize: vertical;
+        }
+
+        .alert {
             padding: 1rem 1.5rem;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+            border-radius: 8px;
+            margin-bottom: 1.5rem;
         }
 
         .alert-success {
-            background: #d1fae5;
-            border-color: #6ee7b7;
-            color: #065f46;
+            background: rgba(123, 165, 145, 0.1);
+            border: 2px solid var(--success);
+            color: var(--success);
         }
 
         .alert-danger {
-            background: #fee2e2;
-            border-color: #fca5a5;
-            color: #991b1b;
+            background: rgba(193, 123, 123, 0.1);
+            border: 2px solid var(--danger);
+            color: var(--danger);
         }
 
         .alert-warning {
-            background: #fef3c7;
-            border-color: #fcd34d;
-            color: #92400e;
+            background: rgba(212, 165, 116, 0.1);
+            border: 2px solid var(--warning);
+            color: var(--warning);
         }
 
-        .alert-info {
-            background: #dbeafe;
-            border-color: #93c5fd;
-            color: #1e40af;
+        .grid {
+            display: grid;
+            gap: 1.5rem;
         }
 
-        /* Stat Card Styles */
-        .stat-card {
+        .grid-2 {
+            grid-template-columns: repeat(2, 1fr);
+        }
+
+        .grid-3 {
+            grid-template-columns: repeat(3, 1fr);
+        }
+
+        footer {
+            background: var(--primary-dark);
+            color: white;
+            padding: 2rem;
             text-align: center;
-            padding: 2rem 1.5rem;
-            border-radius: 12px;
-            background: white;
-            border: 2px solid var(--border-color);
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-            transition: all 0.3s ease;
-        }
-
-        .stat-card:hover {
-            border-color: var(--primary-color);
-            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.15);
-        }
-
-        .stat-card h3 {
-            font-size: 2.75rem;
-            font-weight: 700;
-            margin: 0;
-            color: var(--primary-color);
-        }
-
-        .stat-card p {
-            margin: 0.5rem 0 0 0;
-            color: var(--text-secondary);
-            font-weight: 500;
-            font-size: 1rem;
-        }
-
-        /* List Group Styles */
-        .list-group-item {
-            border: 1px solid var(--border-color);
-            border-radius: 12px !important;
-            margin-bottom: 0.75rem;
-            transition: all 0.3s ease;
-            background: var(--card-bg);
-        }
-
-        .list-group-item:hover {
-            box-shadow: var(--shadow-md);
-            transform: translateX(4px);
-        }
-
-        /* Footer Styles */
-        .footer {
-            background: linear-gradient(135deg, #1e293b, #0f172a);
-            color: white;
-            padding: 3rem 0 1.5rem 0;
             margin-top: 4rem;
-            box-shadow: 0 -4px 6px rgba(0, 0, 0, 0.1);
         }
 
-        .footer h5, .footer h6 {
-            font-weight: 700;
-            margin-bottom: 1rem;
-        }
-
-        .footer a {
-            color: rgba(255, 255, 255, 0.8);
+        footer a {
+            color: var(--accent);
             text-decoration: none;
-            transition: all 0.3s ease;
         }
 
-        .footer a:hover {
-            color: white;
-            transform: translateX(4px);
-            display: inline-block;
-        }
-
-        /* Notification Badge */
-        .notification-badge {
-            position: absolute;
-            top: 0;
-            right: 0;
-            background: linear-gradient(135deg, var(--danger-color), #dc2626);
-            color: white;
-            border-radius: 50%;
-            width: 20px;
-            height: 20px;
-            font-size: 0.7rem;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 700;
-            box-shadow: 0 2px 8px rgba(239, 68, 68, 0.4);
-        }
-
-        /* Dropdown Styles */
-        .dropdown-menu {
-            border: none;
-            border-radius: 12px;
-            box-shadow: var(--shadow-lg);
-            padding: 0.5rem;
-        }
-
-        .dropdown-item {
-            border-radius: 8px;
-            padding: 0.75rem 1rem;
-            transition: all 0.2s ease;
-        }
-
-        .dropdown-item:hover {
-            background: var(--light-bg);
-            transform: translateX(4px);
-        }
-
-        /* Custom Scrollbar */
-        ::-webkit-scrollbar {
-            width: 10px;
-        }
-
-        ::-webkit-scrollbar-track {
-            background: var(--light-bg);
-        }
-
-        ::-webkit-scrollbar-thumb {
-            background: #cbd5e1;
-            border-radius: 5px;
-        }
-
-        ::-webkit-scrollbar-thumb:hover {
-            background: #94a3b8;
-        }
-
-        /* Responsive Design */
         @media (max-width: 768px) {
-            .stat-card h3 {
-                font-size: 2rem;
+            .grid-2, .grid-3 {
+                grid-template-columns: 1fr;
             }
-
-            .card-body {
-                padding: 1rem;
+            .nav-links {
+                gap: 1rem;
+                font-size: 0.9rem;
             }
-
-            main.container {
-                padding: 1rem 0.5rem;
-            }
-        }
-
-        /* Animation */
-        @keyframes fadeInUp {
-            from {
-                opacity: 0;
-                transform: translateY(20px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .card, .alert {
-            animation: fadeInUp 0.5s ease-out;
         }
     </style>
 
     {% block extra_css %}{% endblock %}
 </head>
 <body>
-    <!-- Navigation -->
-    <nav class="navbar navbar-expand-lg navbar-light">
-        <div class="container">
-            <a class="navbar-brand" href="{{ url_for('index') }}">
-                <i class="bi bi-heart-pulse-fill"></i>
-                <span>MindBridge</span>
-            </a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav me-auto">
-                    {% if current_user %}
-                        {% if current_user.user_type.value == 'client' %}
-                            <li class="nav-item">
-                                <a class="nav-link" href="{{ url_for('client.dashboard') }}">
-                                    <i class="bi bi-speedometer2"></i> Dashboard
-                                </a>
-                            </li>
-                            <li class="nav-item">
-                                <a class="nav-link" href="{{ url_for('client.breakthroughs') }}">
-                                    <i class="bi bi-star-fill"></i> Breakthroughs
-                                </a>
-                            </li>
-                            <li class="nav-item">
-                                <a class="nav-link" href="{{ url_for('client.triggers') }}">
-                                    <i class="bi bi-lightning-fill"></i> Triggers
-                                </a>
-                            </li>
-                            <li class="nav-item">
-                                <a class="nav-link" href="{{ url_for('client.journal') }}">
-                                    <i class="bi bi-journal-text"></i> Journal
-                                </a>
-                            </li>
-                            <li class="nav-item">
-                                <a class="nav-link" href="{{ url_for('client.prompts') }}">
-                                    <i class="bi bi-lightbulb-fill"></i> Prompts
-                                </a>
-                            </li>
-                        {% elif current_user.user_type.value == 'therapist' %}
-                            <li class="nav-item">
-                                <a class="nav-link" href="{{ url_for('therapist.dashboard') }}">
-                                    <i class="bi bi-speedometer2"></i> Dashboard
-                                </a>
-                            </li>
-                            <li class="nav-item">
-                                <a class="nav-link" href="{{ url_for('therapist.clients') }}">
-                                    <i class="bi bi-people-fill"></i> Clients
-                                </a>
-                            </li>
-                            <li class="nav-item">
-                                <a class="nav-link" href="{{ url_for('therapist.create_prompt') }}">
-                                    <i class="bi bi-plus-circle-fill"></i> Create Prompt
-                                </a>
-                            </li>
-                        {% endif %}
-                        <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('messaging.inbox') }}">
-                                <i class="bi bi-envelope-fill"></i> Messages
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link text-danger" href="{{ url_for('crisis.index') }}">
-                                <i class="bi bi-exclamation-triangle-fill"></i> Crisis Support
-                            </a>
-                        </li>
-                    {% endif %}
-                </ul>
-                <ul class="navbar-nav">
-                    {% if current_user %}
-                        <li class="nav-item dropdown">
-                            <a class="nav-link dropdown-toggle" href="#" id="userDropdown" role="button" data-bs-toggle="dropdown">
-                                <i class="bi bi-person-circle"></i> {{ current_user.first_name }}
-                            </a>
-                            <ul class="dropdown-menu dropdown-menu-end">
-                                <li>
-                                    <a class="dropdown-item" href="{{ url_for('auth.profile') }}">
-                                        <i class="bi bi-person-fill"></i> Profile
-                                    </a>
-                                </li>
-                                <li><hr class="dropdown-divider"></li>
-                                <li>
-                                    <a class="dropdown-item" href="{{ url_for('auth.logout') }}">
-                                        <i class="bi bi-box-arrow-right"></i> Logout
-                                    </a>
-                                </li>
-                            </ul>
-                        </li>
+    <nav>
+        <div class="nav-container">
+            <a href="/" class="logo">🧠 MindBridge</a>
+            <ul class="nav-links">
+                {% if session.user_id %}
+                    {% if session.user_type == 'client' %}
+                        <li><a href="/client/dashboard">Dashboard</a></li>
+                        <li><a href="/client/journal">7 Pockets</a></li>
+                        <li><a href="/messaging/inbox">Capsules</a></li>
+                        <li><a href="/crisis/resources">Crisis</a></li>
                     {% else %}
-                        <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('auth.login') }}">
-                                <i class="bi bi-box-arrow-in-right"></i> Login
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="btn btn-primary ms-2" href="{{ url_for('auth.register') }}">
-                                Get Started
-                            </a>
-                        </li>
+                        <li><a href="/therapist/dashboard">Dashboard</a></li>
+                        <li><a href="/therapist/clients">Clients</a></li>
+                        <li><a href="/messaging/inbox">Capsules</a></li>
                     {% endif %}
-                </ul>
-            </div>
+                    <li><a href="/auth/logout">Logout</a></li>
+                {% else %}
+                    <li><a href="/">Home</a></li>
+                    <li><a href="/auth/login">Login</a></li>
+                    <li><a href="/auth/register">Register</a></li>
+                    <li><a href="/crisis/resources">Crisis Help</a></li>
+                {% endif %}
+            </ul>
         </div>
     </nav>
 
-    <!-- Flash Messages -->
-    {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-            <div class="container mt-3">
-                {% for category, message in messages %}
-                    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
-                        <strong>
-                            {% if category == 'success' %}
-                                <i class="bi bi-check-circle-fill"></i>
-                            {% elif category == 'danger' %}
-                                <i class="bi bi-exclamation-triangle-fill"></i>
-                            {% elif category == 'warning' %}
-                                <i class="bi bi-exclamation-circle-fill"></i>
-                            {% else %}
-                                <i class="bi bi-info-circle-fill"></i>
-                            {% endif %}
-                        </strong>
-                        {{ message }}
-                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                    </div>
-                {% endfor %}
-            </div>
-        {% endif %}
-    {% endwith %}
-
-    <!-- Main Content -->
-    <main class="container my-4">
+    <main>
         {% block content %}{% endblock %}
     </main>
 
-    <!-- Footer -->
-    <footer class="footer mt-auto">
-        <div class="container">
-            <div class="row">
-                <div class="col-md-6 mb-4">
-                    <h5>
-                        <i class="bi bi-heart-pulse-fill"></i> MindBridge
-                    </h5>
-                    <p class="text-muted">
-                        Supporting mental wellness through continuous therapeutic engagement.
-                        Building bridges between therapy sessions.
-                    </p>
-                </div>
-                <div class="col-md-3 mb-4">
-                    <h6>Quick Links</h6>
-                    <ul class="list-unstyled">
-                        <li class="mb-2">
-                            <a href="{{ url_for('crisis.resources') }}">
-                                <i class="bi bi-shield-fill-check"></i> Crisis Resources
-                            </a>
-                        </li>
-                        <li class="mb-2">
-                            <a href="#">
-                                <i class="bi bi-lock-fill"></i> Privacy Policy
-                            </a>
-                        </li>
-                        <li class="mb-2">
-                            <a href="#">
-                                <i class="bi bi-file-text-fill"></i> Terms of Service
-                            </a>
-                        </li>
-                    </ul>
-                </div>
-                <div class="col-md-3 mb-4">
-                    <h6>Emergency Support</h6>
-                    <div class="crisis-contact">
-                        <p class="text-danger fw-bold mb-2">
-                            <i class="bi bi-telephone-fill"></i> 988
-                        </p>
-                        <small class="text-light d-block">Suicide & Crisis Lifeline</small>
-                        <small class="text-light d-block mt-2">Available 24/7</small>
-                    </div>
-                </div>
-            </div>
-            <hr class="bg-light opacity-25 my-4">
-            <div class="row">
-                <div class="col-12 text-center">
-                    <p class="text-muted mb-0">
-                        © 2025 MindBridge. All rights reserved. | HIPAA Compliant | Secure & Confidential
-                    </p>
-                </div>
-            </div>
-        </div>
+    <footer>
+        <p>&copy; 2024 MindBridge - Digital Emotional Wellness Platform</p>
+        <p style="margin-top: 0.5rem; font-size: 0.9rem;">
+            <a href="/privacy">Privacy Policy</a> | 
+            <a href="/terms">Terms of Service</a> | 
+            <a href="/crisis/resources">Crisis Resources</a>
+        </p>
+        <p style="margin-top: 1rem; font-size: 0.85rem; opacity: 0.8;">
+            Not a substitute for professional mental health services. Kenya Data Protection Act (2019) Compliant.
+        </p>
     </footer>
-
-    <!-- Bootstrap JS -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
     {% block extra_js %}{% endblock %}
 </body>

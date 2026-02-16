@@ -1,20 +1,49 @@
-from flask import Blueprint, request, jsonify, session
+from flask import Blueprint, request, jsonify, session, render_template, redirect
 from models import (db, CrisisEvent, DeescalationTechnique, ClientDeescalationHistory,
                     ClientTherapistRelationship, Notification, ActivityLog)
 from datetime import datetime
 
 crisis_bp = Blueprint('crisis', __name__)
 
+
 def require_auth():
     """Decorator to require authentication"""
+
     def decorator(f):
         def wrapper(*args, **kwargs):
             if 'user_id' not in session:
                 return jsonify({'error': 'Unauthorized'}), 401
             return f(*args, **kwargs)
+
         wrapper.__name__ = f.__name__
         return wrapper
+
     return decorator
+
+
+# ========================================
+# TEMPLATE ROUTES (GET)
+# ========================================
+
+@crisis_bp.route('/resources', methods=['GET'])
+def resources():
+    """Show crisis resources - always accessible"""
+    return render_template('crisis/resources.html')
+
+
+@crisis_bp.route('/techniques', methods=['GET'])
+def techniques():
+    """Show deescalation techniques - always accessible"""
+    return render_template('crisis/techniques.html')
+
+
+@crisis_bp.route('/log-event', methods=['GET'])
+def log_event_page():
+    """Show log crisis event form"""
+    if 'user_id' not in session:
+        return redirect('/auth/login')
+    return render_template('crisis/log_event.html')
+
 
 # ========================================
 # CRISIS EVENTS
@@ -26,29 +55,29 @@ def log_crisis_event():
     """Log a crisis event (client only)"""
     user_id = session['user_id']
     user_type = session['user_type']
-    
+
     if user_type != 'client':
         return jsonify({'error': 'Only clients can log crisis events'}), 403
-    
+
     data = request.get_json()
-    
+
     required = ['crisis_type', 'severity_level', 'description']
     if not all(field in data for field in required):
         return jsonify({'error': 'Missing required fields'}), 400
-    
+
     severity = data['severity_level']
     if severity < 1 or severity > 10:
         return jsonify({'error': 'Severity level must be between 1 and 10'}), 400
-    
+
     # Get active relationship
     relationship = ClientTherapistRelationship.query.filter_by(
         client_id=user_id,
         status='active'
     ).first()
-    
+
     if not relationship:
         return jsonify({'error': 'No active therapist relationship found'}), 404
-    
+
     try:
         crisis = CrisisEvent(
             client_id=user_id,
@@ -62,7 +91,7 @@ def log_crisis_event():
         )
         db.session.add(crisis)
         db.session.commit()
-        
+
         # Notify therapist if severity >= 7
         if severity >= 7:
             notification = Notification(
@@ -74,11 +103,11 @@ def log_crisis_event():
                 related_entity_id=crisis.crisis_id
             )
             db.session.add(notification)
-            
+
             crisis.therapist_notified = True
             crisis.therapist_notification_date = datetime.utcnow()
             db.session.commit()
-        
+
         # Log activity
         log = ActivityLog(
             user_id=user_id,
@@ -90,16 +119,17 @@ def log_crisis_event():
         )
         db.session.add(log)
         db.session.commit()
-        
+
         return jsonify({
             'message': 'Crisis event logged successfully',
             'crisis_id': crisis.crisis_id,
             'therapist_notified': crisis.therapist_notified
         }), 201
-        
+
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': f'Failed to log crisis: {str(e)}'}), 500
+
 
 @crisis_bp.route('/events', methods=['GET'])
 @require_auth()
@@ -107,7 +137,7 @@ def get_crisis_events():
     """Get user's crisis events"""
     user_id = session['user_id']
     user_type = session['user_type']
-    
+
     if user_type == 'client':
         events = CrisisEvent.query.filter_by(
             client_id=user_id
@@ -118,12 +148,12 @@ def get_crisis_events():
             therapist_id=user_id,
             status='active'
         ).all()
-        
+
         client_ids = [r.client_id for r in relationships]
         events = CrisisEvent.query.filter(
             CrisisEvent.client_id.in_(client_ids)
         ).order_by(CrisisEvent.created_at.desc()).limit(50).all()
-    
+
     return jsonify({
         'events': [{
             'crisis_id': e.crisis_id,
@@ -138,36 +168,38 @@ def get_crisis_events():
         } for e in events]
     }), 200
 
+
 @crisis_bp.route('/events/<int:crisis_id>', methods=['PUT'])
 @require_auth()
 def update_crisis_event(crisis_id):
     """Update crisis event status (therapist or client)"""
     user_id = session['user_id']
     data = request.get_json()
-    
+
     crisis = CrisisEvent.query.get(crisis_id)
     if not crisis:
         return jsonify({'error': 'Crisis event not found'}), 404
-    
+
     # Verify access
     relationship = ClientTherapistRelationship.query.get(crisis.relationship_id)
     if crisis.client_id != user_id and relationship.therapist_id != user_id:
         return jsonify({'error': 'Access denied'}), 403
-    
+
     # Update status
     if 'status' in data:
         if data['status'] not in ['logged', 'in_progress', 'resolved', 'escalated']:
             return jsonify({'error': 'Invalid status'}), 400
         crisis.status = data['status']
-    
+
     # Update resolution notes (therapist only)
     if 'resolution_notes' in data and relationship.therapist_id == user_id:
         crisis.resolution_notes = data['resolution_notes']
-    
+
     crisis.updated_at = datetime.utcnow()
     db.session.commit()
-    
+
     return jsonify({'message': 'Crisis event updated successfully'}), 200
+
 
 # ========================================
 # DEESCALATION TECHNIQUES
@@ -181,18 +213,18 @@ def get_techniques():
     """
     category = request.args.get('category')
     crisis_type = request.args.get('crisis_type')
-    
+
     query = DeescalationTechnique.query.filter_by(is_active=True)
-    
+
     if category:
         query = query.filter_by(technique_category=category)
-    
+
     techniques = query.all()
-    
+
     # Filter by crisis type if provided
     if crisis_type and techniques:
         techniques = [t for t in techniques if not t.best_for or crisis_type in t.best_for]
-    
+
     return jsonify({
         'techniques': [{
             'technique_id': t.technique_id,
@@ -207,6 +239,7 @@ def get_techniques():
         } for t in techniques]
     }), 200
 
+
 @crisis_bp.route('/techniques/<int:technique_id>', methods=['GET'])
 def get_technique_detail(technique_id):
     """Get detailed technique instructions (always accessible)"""
@@ -214,10 +247,10 @@ def get_technique_detail(technique_id):
         technique_id=technique_id,
         is_active=True
     ).first()
-    
+
     if not technique:
         return jsonify({'error': 'Technique not found'}), 404
-    
+
     return jsonify({
         'technique_id': technique.technique_id,
         'technique_name': technique.technique_name,
@@ -231,22 +264,23 @@ def get_technique_detail(technique_id):
         'video_guide_url': technique.video_guide_url
     }), 200
 
+
 @crisis_bp.route('/techniques/<int:technique_id>/use', methods=['POST'])
 @require_auth()
 def log_technique_usage(technique_id):
     """Log usage of a deescalation technique"""
     user_id = session['user_id']
     user_type = session['user_type']
-    
+
     if user_type != 'client':
         return jsonify({'error': 'Only clients can log technique usage'}), 403
-    
+
     data = request.get_json()
-    
+
     technique = DeescalationTechnique.query.get(technique_id)
     if not technique:
         return jsonify({'error': 'Technique not found'}), 404
-    
+
     try:
         history = ClientDeescalationHistory(
             client_id=user_id,
@@ -258,26 +292,27 @@ def log_technique_usage(technique_id):
         )
         db.session.add(history)
         db.session.commit()
-        
+
         return jsonify({
             'message': 'Technique usage logged successfully',
             'history_id': history.history_id
         }), 201
-        
+
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': f'Failed to log usage: {str(e)}'}), 500
+
 
 @crisis_bp.route('/techniques/history', methods=['GET'])
 @require_auth()
 def get_technique_history():
     """Get user's technique usage history"""
     user_id = session['user_id']
-    
+
     history = ClientDeescalationHistory.query.filter_by(
         client_id=user_id
     ).order_by(ClientDeescalationHistory.usage_date.desc()).limit(50).all()
-    
+
     return jsonify({
         'history': [{
             'history_id': h.history_id,
@@ -290,6 +325,7 @@ def get_technique_history():
         } for h in history]
     }), 200
 
+
 # ========================================
 # ADMIN: MANAGE TECHNIQUES (Therapist)
 # ========================================
@@ -299,16 +335,16 @@ def get_technique_history():
 def create_technique():
     """Create new deescalation technique (admin/therapist)"""
     user_type = session['user_type']
-    
+
     if user_type != 'therapist':
         return jsonify({'error': 'Therapist access only'}), 403
-    
+
     data = request.get_json()
-    
+
     required = ['technique_name', 'technique_category', 'description', 'step_by_step_instructions']
     if not all(field in data for field in required):
         return jsonify({'error': 'Missing required fields'}), 400
-    
+
     try:
         technique = DeescalationTechnique(
             technique_name=data['technique_name'],
@@ -325,15 +361,16 @@ def create_technique():
         )
         db.session.add(technique)
         db.session.commit()
-        
+
         return jsonify({
             'message': 'Technique created successfully',
             'technique_id': technique.technique_id
         }), 201
-        
+
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': f'Failed to create technique: {str(e)}'}), 500
+
 
 # ========================================
 # EMERGENCY RESOURCES
@@ -375,5 +412,5 @@ def get_emergency_resources():
             }
         }
     }
-    
+
     return jsonify({'resources': resources}), 200

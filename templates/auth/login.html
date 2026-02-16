@@ -1,34 +1,40 @@
-<!-- templates/auth/login.html -->
 {% extends "base.html" %}
 
 {% block title %}Login - MindBridge{% endblock %}
 
 {% block content %}
-<div class="row justify-content-center">
-    <div class="col-md-6">
-        <div class="card">
-            <div class="card-body p-5">
-                <h2 class="text-center mb-4">Login to MindBridge</h2>
-                <form method="POST">
-                    <div class="mb-3">
-                        <label for="email" class="form-label">Email</label>
-                        <input type="email" class="form-control" id="email" name="email" required>
-                    </div>
-                    <div class="mb-3">
-                        <label for="password" class="form-label">Password</label>
-                        <input type="password" class="form-control" id="password" name="password" required>
-                    </div>
-                    <div class="mb-3 form-check">
-                        <input type="checkbox" class="form-check-input" id="remember" name="remember">
-                        <label class="form-check-label" for="remember">Remember me</label>
-                    </div>
-                    <button type="submit" class="btn btn-primary w-100">Login</button>
-                </form>
-                <hr>
-                <p class="text-center mb-0">
-                    Don't have an account? <a href="{{ url_for('auth.register') }}">Register here</a>
-                </p>
+<div class="container" style="max-width: 500px;">
+    <div class="card">
+        <div class="card-header">
+            <h2>Welcome Back</h2>
+            <p style="color: var(--text-muted);">Login to continue your journey</p>
+        </div>
+
+        <form action="/auth/login" method="POST">
+            <div class="form-group">
+                <label for="email">Email Address</label>
+                <input type="email" id="email" name="email" class="form-control" required autofocus>
             </div>
+
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" class="form-control" required>
+            </div>
+
+            <button type="submit" class="btn btn-primary" style="width: 100%; padding: 1rem; font-size: 1.1rem;">
+                Login
+            </button>
+
+            <div style="text-align: center; margin-top: 1.5rem;">
+                <p>Don't have an account? <a href="/auth/register">Register here</a></p>
+            </div>
+        </form>
+
+        <hr style="margin: 2rem 0;">
+
+        <div style="text-align: center;">
+            <p style="color: var(--text-muted); margin-bottom: 1rem;">Need immediate help?</p>
+            <a href="/crisis/resources" class="btn btn-danger">Crisis Resources</a>
         </div>
     </div>
 </div>

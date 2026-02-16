@@ -1,10 +1,11 @@
-from flask import Flask
+from flask import Flask, render_template, session
 from models import db
 import os
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
+
 
 def create_app():
     app = Flask(__name__)
@@ -43,13 +44,32 @@ def create_app():
 
     @app.route('/')
     def index():
-        return {'message': 'MindBridge 2.0 API', 'status': 'running'}
+        return render_template('index.html')
 
     @app.route('/health')
     def health():
         return {'status': 'healthy', 'database': 'connected'}
 
+    # Error handlers
+    @app.errorhandler(404)
+    def not_found(e):
+        return render_template('errors/404.html'), 404
+
+    @app.errorhandler(500)
+    def server_error(e):
+        return render_template('errors/500.html'), 500
+
+    # Static pages
+    @app.route('/privacy')
+    def privacy():
+        return render_template('privacy.html')
+
+    @app.route('/terms')
+    def terms():
+        return render_template('terms.html')
+
     return app
+
 
 if __name__ == '__main__':
     app = create_app()
