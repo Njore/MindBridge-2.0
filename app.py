@@ -1,6 +1,7 @@
 from flask import Flask, render_template, session
 from models import db
 import os
+import click
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -42,6 +43,9 @@ def create_app():
     app.register_blueprint(messaging_bp, url_prefix='/messaging')
     app.register_blueprint(crisis_bp, url_prefix='/crisis')
 
+    # Register CLI commands
+    register_commands(app)
+
     @app.route('/')
     def index():
         return render_template('index.html')
@@ -69,6 +73,30 @@ def create_app():
         return render_template('terms.html')
 
     return app
+
+
+# ----------------------------------------
+# CLI Commands
+# ----------------------------------------
+
+def register_commands(app):
+    @app.cli.command('reset-db')
+    @click.confirmation_option(prompt='⚠️  This will DELETE all data. Are you sure?')
+    def reset_db():
+        """Drop all tables and recreate them from the current models."""
+        env = os.getenv('FLASK_ENV', 'development')
+        allow_reset = os.getenv('ALLOW_DB_RESET', 'false').lower() == 'true'
+
+        if env == 'production' and not allow_reset:
+            click.echo('❌ Blocked in production. Set ALLOW_DB_RESET=true to override.')
+            return
+
+        click.echo('⚠️  Dropping all tables...')
+        db.drop_all()
+        click.echo('✓ All tables dropped.')
+        click.echo('🔧 Recreating tables from models...')
+        db.create_all()
+        click.echo('✓ Database reset successfully!')
 
 
 if __name__ == '__main__':
