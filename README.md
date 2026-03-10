@@ -22,7 +22,7 @@ A secure HIPAA-compliant messaging platform that bridges the gap between schedul
 ## Technology Stack
 
 - **Backend**: Python Flask
-- **Database**: SQLite (easily upgradable to PostgreSQL)
+- **Database**: SQL
 - **Frontend**: Bootstrap 5, Vanilla JavaScript
 - **Security**: Flask-Bcrypt, Session Management, CSRF Protection
 
@@ -112,10 +112,10 @@ mindbridge/
 
 2. **Create virtual environment**
    ```bash
-   python -m venv venv
+   python -m venv .venv
    
    # On Windows:
-   venv\Scripts\activate
+   .venv\Scripts\activate
    
    # On macOS/Linux:
    source venv/bin/activate

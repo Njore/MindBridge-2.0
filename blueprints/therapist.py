@@ -51,6 +51,14 @@ def create_prompt_page():
     return render_template('therapist/create_prompt.html')
 
 
+@therapist_bp.route('/add-client', methods=['GET'])
+def add_client_page():
+    """Show add/connect client page"""
+    if 'user_id' not in session or session.get('user_type') != 'therapist':
+        return redirect('/auth/login')
+    return render_template('therapist/add_client.html')
+
+
 # ========================================
 # CLIENT RELATIONSHIPS (API)
 # ========================================
@@ -80,6 +88,196 @@ def get_clients():
         })
 
     return jsonify({'clients': clients}), 200
+
+
+@therapist_bp.route('/api/clients/search', methods=['GET'])
+@require_therapist()
+def search_clients():
+    """
+    Search registered client accounts by email or name.
+    Used by the Add Client page before sending a connection request.
+    """
+    therapist_id = session['user_id']
+    query_str = request.args.get('q', '').strip()
+
+    if len(query_str) < 2:
+        return jsonify({'error': 'Search query must be at least 2 characters'}), 400
+
+    results = User.query.filter(
+        User.user_type == 'client',
+        User.is_active == True,
+        db.or_(
+            User.email.ilike(f'%{query_str}%'),
+            User.first_name.ilike(f'%{query_str}%'),
+            User.last_name.ilike(f'%{query_str}%')
+        )
+    ).limit(10).all()
+
+    # IDs already connected to this therapist (any status)
+    existing_ids = {
+        r.client_id for r in ClientTherapistRelationship.query.filter_by(
+            therapist_id=therapist_id
+        ).all()
+    }
+
+    users = []
+    for u in results:
+        users.append({
+            'user_id': u.user_id,
+            'first_name': u.first_name,
+            'last_name': u.last_name,
+            'email': u.email,
+            'already_connected': u.user_id in existing_ids
+        })
+
+    return jsonify({'results': users}), 200
+
+
+@therapist_bp.route('/api/clients/connect', methods=['POST'])
+@require_therapist()
+def connect_client():
+    """
+    Create a new client-therapist relationship.
+    Body: { client_id, client_goals (optional) }
+    """
+    therapist_id = session['user_id']
+    data = request.get_json()
+
+    client_id = data.get('client_id')
+    if not client_id:
+        return jsonify({'error': 'client_id is required'}), 400
+
+    client = User.query.filter_by(user_id=client_id, user_type='client', is_active=True).first()
+    if not client:
+        return jsonify({'error': 'Client not found'}), 404
+
+    # Prevent duplicate active relationships
+    existing = ClientTherapistRelationship.query.filter_by(
+        client_id=client_id,
+        therapist_id=therapist_id,
+        status='active'
+    ).first()
+    if existing:
+        return jsonify({'error': 'An active relationship with this client already exists'}), 409
+
+    # Re-activate a previously ended relationship if one exists
+    ended = ClientTherapistRelationship.query.filter_by(
+        client_id=client_id,
+        therapist_id=therapist_id,
+        status='ended'
+    ).order_by(ClientTherapistRelationship.created_at.desc()).first()
+
+    try:
+        if ended:
+            ended.status = 'active'
+            ended.relationship_start_date = date.today()
+            ended.relationship_end_date = None
+            ended.client_goals = data.get('client_goals', ended.client_goals)
+            ended.updated_at = datetime.utcnow()
+            relationship = ended
+        else:
+            relationship = ClientTherapistRelationship(
+                client_id=client_id,
+                therapist_id=therapist_id,
+                status='active',
+                relationship_start_date=date.today(),
+                client_goals=data.get('client_goals', '')
+            )
+            db.session.add(relationship)
+
+        db.session.flush()
+
+        notification = Notification(
+            user_id=client_id,
+            notification_type='new_relationship',
+            title='New Therapist Connection',
+            message='You have been connected with a therapist on MindBridge.',
+            related_entity_type='relationship',
+            related_entity_id=relationship.relationship_id
+        )
+        db.session.add(notification)
+
+        log = ActivityLog(
+            user_id=therapist_id,
+            action_type='client_connected',
+            resource_type='relationship',
+            resource_id=relationship.relationship_id,
+            description=f'Connected with client user_id={client_id}',
+            ip_address=request.remote_addr
+        )
+        db.session.add(log)
+        db.session.commit()
+
+        return jsonify({
+            'message': 'Client connected successfully',
+            'relationship_id': relationship.relationship_id,
+            'client': {
+                'user_id': client.user_id,
+                'first_name': client.first_name,
+                'last_name': client.last_name,
+                'email': client.email
+            },
+            'relationship_start': relationship.relationship_start_date.isoformat()
+        }), 201
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Failed to connect client: {str(e)}'}), 500
+
+
+@therapist_bp.route('/api/clients/<int:client_id>/disconnect', methods=['POST'])
+@require_therapist()
+def disconnect_client(client_id):
+    """
+    End an active client-therapist relationship.
+    Body: { reason (optional) }
+    """
+    therapist_id = session['user_id']
+    data = request.get_json() or {}
+
+    relationship = ClientTherapistRelationship.query.filter_by(
+        client_id=client_id,
+        therapist_id=therapist_id,
+        status='active'
+    ).first()
+
+    if not relationship:
+        return jsonify({'error': 'Active relationship not found'}), 404
+
+    try:
+        relationship.status = 'ended'
+        relationship.relationship_end_date = date.today()
+        if data.get('reason'):
+            relationship.therapist_notes = (relationship.therapist_notes or '') + \
+                f'\n[Ended {date.today().isoformat()}]: {data["reason"]}'
+        relationship.updated_at = datetime.utcnow()
+
+        notification = Notification(
+            user_id=client_id,
+            notification_type='relationship_ended',
+            title='Therapist Connection Ended',
+            message='Your therapist has ended the therapeutic relationship on MindBridge.',
+            related_entity_type='relationship',
+            related_entity_id=relationship.relationship_id
+        )
+        db.session.add(notification)
+
+        log = ActivityLog(
+            user_id=therapist_id,
+            action_type='client_disconnected',
+            resource_type='relationship',
+            resource_id=relationship.relationship_id,
+            description=f'Ended relationship with client user_id={client_id}',
+            ip_address=request.remote_addr
+        )
+        db.session.add(log)
+        db.session.commit()
+
+        return jsonify({'message': 'Client relationship ended successfully'}), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Failed to end relationship: {str(e)}'}), 500
 
 
 @therapist_bp.route('/clients/<int:client_id>', methods=['GET'])

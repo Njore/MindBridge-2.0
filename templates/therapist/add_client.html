@@ -1,10 +1,263 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>$Title$</title>
-</head>
-<body>
-$END$
-</body>
-</html>
+{% extends "base.html" %}
+
+{% block title %}Add Client — MindBridge{% endblock %}
+
+{% block content %}
+<div class="container py-5" style="max-width: 720px;">
+
+  <!-- Header -->
+  <div class="d-flex align-items-center mb-4 gap-3">
+    <a href="/therapist/clients" class="btn btn-outline-secondary btn-sm">
+      ← Back to Clients
+    </a>
+    <h2 class="mb-0">Connect a Client</h2>
+  </div>
+
+  <!-- Alert area -->
+  <div id="alert-area"></div>
+
+  <!-- Search card -->
+  <div class="card shadow-sm mb-4">
+    <div class="card-body">
+      <h5 class="card-title mb-1">Search by name or email</h5>
+      <p class="text-muted small mb-3">
+        The client must already have a MindBridge account registered as a <strong>client</strong>.
+      </p>
+
+      <div class="input-group">
+        <input
+          type="text"
+          id="search-input"
+          class="form-control"
+          placeholder="e.g. jane.doe@email.com or Jane"
+          autocomplete="off"
+        />
+        <button class="btn btn-primary" id="search-btn" type="button">
+          <span id="search-spinner" class="spinner-border spinner-border-sm d-none me-1"></span>
+          Search
+        </button>
+      </div>
+      <div class="form-text">Enter at least 2 characters.</div>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div id="results-area"></div>
+
+  <!-- Connect modal -->
+  <div class="modal fade" id="connectModal" tabindex="-1" aria-labelledby="connectModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="connectModalLabel">Confirm Connection</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <p>You are about to connect with:</p>
+          <p class="fw-bold fs-5 mb-1" id="modal-client-name"></p>
+          <p class="text-muted small mb-3" id="modal-client-email"></p>
+
+          <label for="modal-goals" class="form-label">
+            Client goals <span class="text-muted fw-normal">(optional)</span>
+          </label>
+          <textarea
+            id="modal-goals"
+            class="form-control"
+            rows="3"
+            placeholder="e.g. Manage anxiety, improve sleep quality…"
+          ></textarea>
+          <input type="hidden" id="modal-client-id" />
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-primary" id="confirm-connect-btn">
+            <span id="connect-spinner" class="spinner-border spinner-border-sm d-none me-1"></span>
+            Connect Client
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const searchInput  = document.getElementById('search-input');
+  const searchBtn    = document.getElementById('search-btn');
+  const searchSpinner = document.getElementById('search-spinner');
+  const resultsArea  = document.getElementById('results-area');
+  const alertArea    = document.getElementById('alert-area');
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+
+  function showAlert(message, type = 'danger') {
+    alertArea.innerHTML = `
+      <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      </div>`;
+  }
+
+  function clearAlert() {
+    alertArea.innerHTML = '';
+  }
+
+  function setSearchLoading(on) {
+    searchSpinner.classList.toggle('d-none', !on);
+    searchBtn.disabled = on;
+    searchInput.disabled = on;
+  }
+
+  // ── Search ─────────────────────────────────────────────────────────────────
+
+  async function doSearch() {
+    const q = searchInput.value.trim();
+    if (q.length < 2) {
+      showAlert('Please enter at least 2 characters to search.');
+      return;
+    }
+    clearAlert();
+    setSearchLoading(true);
+    resultsArea.innerHTML = '';
+
+    try {
+      const resp = await fetch(`/therapist/api/clients/search?q=${encodeURIComponent(q)}`);
+      const data = await resp.json();
+
+      if (!resp.ok) {
+        showAlert(data.error || 'Search failed.');
+        return;
+      }
+
+      if (data.results.length === 0) {
+        resultsArea.innerHTML = `
+          <div class="text-center text-muted py-4">
+            <i class="bi bi-person-x fs-1 d-block mb-2"></i>
+            No clients found for <strong>"${escapeHtml(q)}"</strong>.<br>
+            <span class="small">Make sure the client has registered an account.</span>
+          </div>`;
+        return;
+      }
+
+      renderResults(data.results);
+    } catch (err) {
+      showAlert('Network error. Please try again.');
+    } finally {
+      setSearchLoading(false);
+    }
+  }
+
+  function renderResults(results) {
+    const rows = results.map(u => {
+      const badge = u.already_connected
+        ? `<span class="badge bg-success">Already connected</span>`
+        : '';
+      const btn = u.already_connected
+        ? `<button class="btn btn-sm btn-outline-secondary" disabled>Connected</button>`
+        : `<button class="btn btn-sm btn-primary" onclick="openConnectModal(${u.user_id}, '${escapeHtml(u.first_name)} ${escapeHtml(u.last_name)}', '${escapeHtml(u.email)}')">
+             Connect
+           </button>`;
+
+      return `
+        <tr>
+          <td>
+            <div class="fw-semibold">${escapeHtml(u.first_name)} ${escapeHtml(u.last_name)}</div>
+            <div class="text-muted small">${escapeHtml(u.email)}</div>
+          </td>
+          <td class="align-middle">${badge}</td>
+          <td class="align-middle text-end">${btn}</td>
+        </tr>`;
+    }).join('');
+
+    resultsArea.innerHTML = `
+      <div class="card shadow-sm">
+        <div class="card-body p-0">
+          <table class="table table-hover mb-0 align-middle">
+            <thead class="table-light">
+              <tr>
+                <th>Client</th>
+                <th>Status</th>
+                <th class="text-end">Action</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </div>`;
+  }
+
+  // ── Connect modal ──────────────────────────────────────────────────────────
+
+  let connectModal;
+
+  document.addEventListener('DOMContentLoaded', () => {
+    connectModal = new bootstrap.Modal(document.getElementById('connectModal'));
+  });
+
+  function openConnectModal(clientId, name, email) {
+    document.getElementById('modal-client-id').value  = clientId;
+    document.getElementById('modal-client-name').textContent  = name;
+    document.getElementById('modal-client-email').textContent = email;
+    document.getElementById('modal-goals').value = '';
+    clearAlert();
+    connectModal.show();
+  }
+
+  document.getElementById('confirm-connect-btn').addEventListener('click', async () => {
+    const clientId = document.getElementById('modal-client-id').value;
+    const goals    = document.getElementById('modal-goals').value.trim();
+    const spinner  = document.getElementById('connect-spinner');
+    const btn      = document.getElementById('confirm-connect-btn');
+
+    spinner.classList.remove('d-none');
+    btn.disabled = true;
+
+    try {
+      const resp = await fetch('/therapist/api/clients/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ client_id: parseInt(clientId), client_goals: goals })
+      });
+      const data = await resp.json();
+
+      if (resp.ok) {
+        connectModal.hide();
+        showAlert(
+          `<strong>${escapeHtml(data.client.first_name)} ${escapeHtml(data.client.last_name)}</strong> has been connected successfully! 
+           <a href="/therapist/clients" class="alert-link ms-2">View all clients →</a>`,
+          'success'
+        );
+        // Refresh results so the button becomes disabled
+        doSearch();
+      } else {
+        connectModal.hide();
+        showAlert(data.error || 'Connection failed.');
+      }
+    } catch (err) {
+      connectModal.hide();
+      showAlert('Network error. Please try again.');
+    } finally {
+      spinner.classList.add('d-none');
+      btn.disabled = false;
+    }
+  });
+
+  // ── Event listeners ────────────────────────────────────────────────────────
+
+  searchBtn.addEventListener('click', doSearch);
+  searchInput.addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+
+  // ── XSS safety ─────────────────────────────────────────────────────────────
+
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+</script>
+{% endblock %}f

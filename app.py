@@ -1,6 +1,40 @@
+import sys
+import subprocess
+import os
+
+# ----------------------------------------
+# Virtual Environment Check
+# ----------------------------------------
+
+def ensure_venv():
+    """Ensure the script is running inside the .venv virtual environment."""
+    venv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.venv')
+
+    # Check if the current Python executable is already inside .venv
+    if os.path.abspath(sys.executable).startswith(os.path.abspath(venv_path)):
+        return  # Already running inside .venv
+
+    # Determine the python executable inside .venv
+    if sys.platform == 'win32':
+        venv_python = os.path.join(venv_path, 'Scripts', 'python.exe')
+    else:
+        venv_python = os.path.join(venv_path, 'bin', 'python')
+
+    if not os.path.exists(venv_python):
+        print(f"❌ No .venv found at: {venv_path}")
+        print("   Run: python -m venv .venv && pip install -r requirements.txt")
+        sys.exit(1)
+
+    print("⚡ Restarting inside .venv...")
+    result = subprocess.run([venv_python] + sys.argv)
+    sys.exit(result.returncode)
+
+
+ensure_venv()
+
+
 from flask import Flask, render_template, session
 from models import db
-import os
 import click
 from dotenv import load_dotenv
 
@@ -76,7 +110,7 @@ def create_app():
 
 
 # ----------------------------------------
-# CLI Commands
+# CLI Commands // run this // (.venv/Scripts/flask reset-db)
 # ----------------------------------------
 
 def register_commands(app):
