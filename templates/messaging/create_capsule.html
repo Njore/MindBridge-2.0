@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+
+{% block title %}New Capsule - MindBridge{% endblock %}
+
+{% block content %}
+<div class="container" style="max-width:600px;">
+  <div class="card">
+    <div style="margin-bottom:1.5rem;">
+      <a href="/messaging/inbox" class="btn btn-outline" style="font-size:0.85rem;padding:0.4rem 0.8rem;">← Back</a>
+    </div>
+    <div class="card-header">
+      <h2>💌 Create New Capsule</h2>
+      <p style="color:var(--text-muted);">Start a 24-hour communication window with your therapist</p>
+    </div>
+
+    <div id="alert-area"></div>
+    <div id="no-therapist" style="display:none;text-align:center;padding:2rem;color:var(--text-muted);">
+      <p>⚠️ You are not connected to a therapist yet.</p>
+      <p style="font-size:0.9rem;">A therapist needs to connect with you first before you can create capsules.</p>
+    </div>
+
+    <div id="form-area">
+      <div class="form-group">
+        <label>Title</label>
+        <input type="text" id="title" class="form-control" placeholder="e.g. Daily Check-in, Weekend Reflection...">
+      </div>
+      <div class="form-group">
+        <label>Tag</label>
+        <select id="user_tag" class="form-control">
+          <option value="general">General</option>
+          <option value="trigger">Trigger</option>
+          <option value="breakthrough">Breakthrough</option>
+          <option value="mixed">Mixed</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>First Message <span style="color:var(--text-muted);font-weight:normal;">(optional)</span></label>
+        <textarea id="first_message" class="form-control" rows="4" placeholder="Add your first message to the capsule..."></textarea>
+      </div>
+      <button id="create-btn" class="btn btn-primary" style="width:100%;padding:1rem;">
+        💌 Create Capsule
+      </button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', async () => {
+
+  const alertArea = document.getElementById('alert-area');
+  let therapistId = null;
+
+  function showAlert(msg, type = 'danger') {
+    alertArea.innerHTML = `
+      <div class="alert alert-${type}">
+        ${msg}
+        <button onclick="this.parentElement.remove()" style="float:right;background:none;border:none;cursor:pointer;font-size:1.2rem;">&times;</button>
+      </div>`;
+  }
+
+  // Check therapist connection
+  try {
+    const resp = await fetch('/client/api/my-therapist');
+    const data = await resp.json();
+
+    if (!resp.ok || !data.therapist) {
+      document.getElementById('form-area').style.display = 'none';
+      document.getElementById('no-therapist').style.display = 'block';
+      return;
+    }
+    therapistId = data.therapist.user_id;
+  } catch (e) {
+    showAlert('Failed to load therapist info.');
+    return;
+  }
+
+  document.getElementById('create-btn').addEventListener('click', async () => {
+    const title    = document.getElementById('title').value.trim();
+    const user_tag = document.getElementById('user_tag').value;
+    const message  = document.getElementById('first_message').value.trim();
+    const btn      = document.getElementById('create-btn');
+
+    btn.disabled = true;
+    btn.textContent = 'Creating...';
+
+    try {
+      // Create capsule
+      const resp = await fetch('/messaging/capsules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          therapist_id: therapistId,
+          title: title || `Capsule - ${new Date().toLocaleDateString()}`,
+          user_tag
+        })
+      });
+      const data = await resp.json();
+
+      if (!resp.ok) { showAlert(data.error || 'Failed to create capsule.'); return; }
+
+      // If there's a first message, send it
+      if (message) {
+        await fetch(`/messaging/capsules/${data.capsule_id}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: message })
+        });
+      }
+
+      window.location = `/messaging/conversation/${data.capsule_id}`;
+
+    } catch (e) {
+      showAlert('Network error. Please try again.');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '💌 Create Capsule';
+    }
+  });
+
+});
+</script>
+{% endblock %}

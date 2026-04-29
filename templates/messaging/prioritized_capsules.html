@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+
+{% block title %}Prioritized Capsules - MindBridge{% endblock %}
+
+{% block content %}
+<div class="container">
+  <div class="card">
+    <h1>📊 Prioritized Capsules</h1>
+    <p>Sorted by urgency - review critical capsules first</p>
+    
+    <div id="capsules-container">
+      <p>Loading...</p>
+    </div>
+  </div>
+</div>
+
+<script>
+async function loadPrioritizedCapsules() {
+  const response = await fetch('/therapist/api/prioritized-capsules');
+  const data = await response.json();
+  
+  const container = document.getElementById('capsules-container');
+  
+  if (data.capsules.length === 0) {
+    container.innerHTML = '<p>No capsules to review</p>';
+    return;
+  }
+
+
+  container.innerHTML = data.capsules.map(c => `
+  <div class="capsule-item priority-${c.priority_level.toLowerCase()}">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap;">
+
+      <div style="flex:1;cursor:pointer;" onclick="window.location='/messaging/conversation/${c.capsule_id}'">
+        <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.5rem;flex-wrap:wrap;">
+          <span class="priority-badge ${c.priority_level.toLowerCase()}">${c.priority_level}</span>
+          <h3 style="margin:0;">${escapeHtml(c.title)}</h3>
+        </div>
+        <p style="margin:0.25rem 0;color:var(--text-muted);">👤 ${escapeHtml(c.client_name)} &middot; ${c.message_count} messages</p>
+        ${c.priority_reasons ? `
+          <p style="margin:0.25rem 0;font-size:0.87rem;">⚠️ ${c.priority_reasons.reasons.slice(0, 2).join(' · ')}</p>
+        ` : ''}
+        <small style="color:var(--text-muted);">
+          Last message: ${new Date(c.last_message_at).toLocaleString()}
+          ${c.priority_analyzed_at ? ` · Analyzed: ${new Date(c.priority_analyzed_at).toLocaleString()}` : ' · Not yet analyzed'}
+        </small>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:0.5rem;align-items:flex-end;">
+        <span style="font-size:0.85rem;color:var(--text-muted);">Score: ${(c.priority_score || 0).toFixed(2)}</span>
+        <button
+          onclick="reanalyzeCapsule(${c.capsule_id}, this)"
+          style="padding:0.35rem 0.9rem;border-radius:8px;border:2px solid var(--border);background:transparent;cursor:pointer;font-size:0.82rem;font-weight:600;transition:all 0.2s;">
+          ⟳ Reanalyze
+        </button>
+      </div>
+
+    </div>
+  </div>
+`).join('');
+}
+    function escapeHtml(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+loadPrioritizedCapsules();
+
+async function reanalyzeCapsule(capsuleId, btn) {
+  btn.disabled  = true;
+  btn.textContent = 'Analyzing...';
+
+  try {
+    const resp = await fetch(`/messaging/api/therapist/capsules/${capsuleId}/reanalyze`, {
+      method: 'POST'
+    });
+    const data = await resp.json();
+
+    if (resp.ok) {
+      btn.textContent = '✓ Done';
+      btn.style.borderColor = 'var(--success)';
+      // Reload the list after a short pause so the new priority is visible
+      setTimeout(() => loadPrioritizedCapsules(), 1200);
+    } else {
+      btn.textContent = '✗ Failed';
+      btn.disabled = false;
+      alert(data.error || 'Reanalysis failed. Is Ollama running?');
+    }
+  } catch (e) {
+    btn.textContent = '✗ Error';
+    btn.disabled = false;
+  }
+}
+
+
+</script>
+
+<style>
+  .capsule-item {
+    border: 2px solid var(--border);
+    border-radius: 12px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    cursor: pointer;
+    transition: all 0.3s;
+  }
+  .priority-critical { border-left: 6px solid #dc2626; background: #fee2e2; }
+  .priority-high { border-left: 6px solid #f59e0b; background: #fed7aa; }
+  .priority-medium { border-left: 6px solid #eab308; }
+  .priority-low { border-left: 6px solid #10b981; }
+  
+  .priority-badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    font-weight: bold;
+    margin-right: 1rem;
+  }
+  .priority-badge.critical { background: #dc2626; color: white; }
+  .priority-badge.high { background: #f59e0b; color: white; }
+  .priority-badge.medium { background: #eab308; }
+  .priority-badge.low { background: #10b981; color: white; }
+</style>
+{% endblock %}

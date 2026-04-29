@@ -1,59 +1,279 @@
 {% extends "base.html" %}
 
-{% block title %}Capsule Conversation - MindBridge{% endblock %}
+{% block title %}Capsule - MindBridge{% endblock %}
 
 {% block extra_css %}
 <style>
-    .message {
-        padding: 1rem;
-        border-radius: 12px;
-        margin-bottom: 1rem;
-        max-width: 80%;
-    }
-
-    .message-client {
-        background: var(--primary-light);
-        margin-left: auto;
-    }
-
-    .message-therapist {
-        background: var(--bg-light);
-        margin-right: auto;
-    }
-
-    .message-time {
-        font-size: 0.85rem;
-        color: var(--text-muted);
-        margin-top: 0.5rem;
-    }
+  .message { padding:1rem;border-radius:12px;margin-bottom:1rem;max-width:75%; }
+  .message-mine { background:var(--primary-light);color:white;margin-left:auto; }
+  .message-theirs { background:var(--bg-light);margin-right:auto; }
+  .message-time { font-size:0.8rem;color:var(--text-muted);margin-top:0.4rem; }
+  #messages-area { min-height:300px;max-height:500px;overflow-y:auto;padding:1rem;background:white;border:2px solid var(--border);border-radius:12px;margin-bottom:1.5rem; }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="container" style="max-width: 900px;">
-    <div class="card">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
-            <div>
-                <h2>Capsule: Daily Check-in</h2>
-                <p style="color: var(--text-muted);">Status: <span class="status-badge status-open">OPEN</span></p>
-            </div>
-            <button class="btn btn-danger">Seal Capsule</button>
-        </div>
+<div class="container" style="max-width:900px;">
+  <div style="margin-bottom:1rem;">
+    <a href="/messaging/inbox" class="btn btn-outline" style="font-size:0.85rem;padding:0.4rem 0.8rem;">← Back to Inbox</a>
+  </div>
 
-        <div style="display: flex; flex-direction: column; gap: 1rem; margin: 2rem 0;">
-            <div class="message message-client">
-                <p>Had a difficult day today. Feeling overwhelmed with work.</p>
-                <div class="message-time">2:30 PM</div>
-            </div>
-        </div>
-
-        <form action="/messaging/capsules/1/messages" method="POST">
-            <div class="form-group">
-                <label for="content">Add Message</label>
-                <textarea id="content" name="content" class="form-control" rows="4" placeholder="Type your message..."></textarea>
-            </div>
-            <button type="submit" class="btn btn-primary">Send Message</button>
-        </form>
+  <div class="card">
+    <!-- Header -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;flex-wrap:wrap;gap:1rem;">
+      <div>
+        <h2 id="capsule-title">Loading...</h2>
+        <p style="color:var(--text-muted);">Status: <span id="capsule-status-badge"></span></p>
+      </div>
+      <div id="capsule-actions"></div>
     </div>
+
+    <div id="alert-area"></div>
+
+    <!-- Messages -->
+    <div id="messages-area">
+      <p style="text-align:center;color:var(--text-muted);">Loading messages...</p>
+    </div>
+
+    <!-- Input -->
+    <div id="message-input-area">
+      <div class="form-group">
+        <label>Add Message</label>
+        <textarea id="message-content" class="form-control" rows="3" placeholder="Type your message..."></textarea>
+      </div>
+      <button id="send-btn" class="btn btn-primary">Send Message</button>
+    </div>
+  </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', async () => {
+
+  const capsuleId = {{ capsule_id }};
+  const userType  = "{{ session.user_type }}";
+  const alertArea = document.getElementById('alert-area');
+  let currentUserId = null;
+  let capsuleStatus = null;
+
+  function showAlert(msg, type = 'danger') {
+    alertArea.innerHTML = `
+      <div class="alert alert-${type}">
+        ${msg}
+        <button onclick="this.parentElement.remove()" style="float:right;background:none;border:none;cursor:pointer;font-size:1.2rem;">&times;</button>
+      </div>`;
+  }
+
+  function escapeHtml(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function formatTime(str) {
+    return new Date(str).toLocaleString('en-GB', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
+  }
+
+  // ── Load capsule ──────────────────────────────────────────────────────────
+  async function loadCapsule() {
+    try {
+      const resp = await fetch(`/messaging/capsules/${capsuleId}`);
+      const data = await resp.json();
+
+      if (!resp.ok) { showAlert(data.error || 'Failed to load capsule.'); return; }
+
+      const c = data.capsule;
+      capsuleStatus = c.status;
+      currentUserId = c.client_id; // will be overridden below if therapist
+
+      document.getElementById('capsule-title').textContent = c.title;
+      document.getElementById('capsule-status-badge').innerHTML =
+        `<span style="display:inline-block;padding:0.2rem 0.75rem;border-radius:20px;font-size:0.85rem;font-weight:600;background:${c.status === 'open' ? 'rgba(123,165,145,0.2)' : 'rgba(139,123,139,0.2)'};color:${c.status === 'open' ? 'var(--success)' : 'var(--primary)'};">${c.status.toUpperCase()}</span>`;
+
+// ── Priority banner (therapist only) ─────────────────────────────────
+if (userType === 'therapist' && c.priority_level) {
+  const priorityColors = {
+    CRITICAL: { bg: '#fee2e2', border: '#dc2626', color: '#dc2626' },
+    HIGH:     { bg: '#fed7aa', border: '#f59e0b', color: '#92400e' },
+    MEDIUM:   { bg: '#fef9c3', border: '#eab308', color: '#713f12' },
+    LOW:      { bg: 'rgba(123,165,145,0.1)', border: 'var(--success)', color: 'var(--success)' }
+  };
+  const pc = priorityColors[c.priority_level] || priorityColors.LOW;
+  const reasons = c.priority_reasons?.reasons?.slice(0, 2).join(' · ') || '';
+  const analyzedAt = c.priority_analyzed_at
+    ? `Last analyzed ${formatTime(c.priority_analyzed_at)}`
+    : 'Not yet analyzed';
+
+  alertArea.innerHTML = `
+    <div id="priority-banner" style="padding:0.85rem 1.25rem;border-radius:10px;border:2px solid ${pc.border};background:${pc.bg};color:${pc.color};margin-bottom:1rem;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap;">
+        <div>
+          <strong>Priority: ${c.priority_level}</strong>
+          ${reasons ? ` &mdash; ${escapeHtml(reasons)}` : ''}
+          <div style="font-size:0.8rem;opacity:0.7;margin-top:0.25rem;">${analyzedAt}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:1rem;">
+          <span style="font-size:0.85rem;opacity:0.8;">Score: ${(c.priority_score || 0).toFixed(2)}</span>
+          <button
+            id="reanalyze-btn"
+            onclick="reanalyzeCapsule()"
+            style="padding:0.35rem 0.85rem;border-radius:8px;border:2px solid ${pc.border};background:transparent;color:${pc.color};cursor:pointer;font-size:0.82rem;font-weight:600;white-space:nowrap;transition:all 0.2s;">
+            ⟳ Reanalyze
+          </button>
+        </div>
+      </div>
+    </div>`;
+}
+
+    // ── Reanalyze capsule ─────────────────────────────────────────────────
+    window.reanalyzeCapsule = async function() {
+      const btn = document.getElementById('reanalyze-btn');
+      if (!btn) return;
+
+      btn.disabled = true;
+      btn.textContent = 'Analyzing...';
+
+      try {
+        const resp = await fetch(`/messaging/api/therapist/capsules/${capsuleId}/reanalyze`, {
+          method: 'POST'
+        });
+        const data = await resp.json();
+
+        if (resp.ok) {
+          // Reload the full capsule so the banner re-renders with fresh data
+          showAlert('✓ Analysis updated — priority is now ' + data.analysis.priority_level, 'success');
+          setTimeout(() => loadCapsule(), 800);
+        } else {
+          showAlert(data.error || 'Reanalysis failed.');
+          btn.disabled = false;
+          btn.textContent = '⟳ Reanalyze';
+        }
+      } catch (e) {
+        showAlert('Network error during reanalysis.');
+        btn.disabled = false;
+        btn.textContent = '⟳ Reanalyze';
+      }
+    };
+
+      // ── Actions based on status + user type ───────────────────────────────
+      const actions = document.getElementById('capsule-actions');
+
+      if (userType === 'client') {
+        // CLIENT: can seal open capsules, archive sealed ones
+        if (c.status === 'open') {
+          actions.innerHTML = `<button class="btn btn-danger" id="seal-btn">🔒 Seal Capsule</button>`;
+          document.getElementById('seal-btn').addEventListener('click', sealCapsule);
+        } else {
+          document.getElementById('message-input-area').style.display = 'none';
+          actions.innerHTML = `<button class="btn btn-outline" onclick="archiveCapsule()">Archive</button>`;
+        }
+      } else {
+        // THERAPIST: can reply but never seal. Archive sealed/archived capsules.
+        if (c.status === 'sealed' || c.status === 'archived') {
+          actions.innerHTML = `<button class="btn btn-outline" onclick="archiveCapsule()">Archive</button>`;
+        }
+      }
+
+      renderMessages(data.messages, c.client_id);
+
+    } catch (e) {
+      showAlert('Failed to load capsule.');
+    }
+  }
+
+  function renderMessages(messages, clientId) {
+    const area = document.getElementById('messages-area');
+
+    if (messages.length === 0) {
+      area.innerHTML = `<p style="text-align:center;color:var(--text-muted);padding:2rem;">No messages yet. Add the first one below.</p>`;
+      return;
+    }
+
+    area.innerHTML = messages.map(m => {
+      const isMine = m.sender_id === clientId;
+      return `
+        <div class="message ${isMine ? 'message-mine' : 'message-theirs'}">
+          <p style="margin:0;">${escapeHtml(m.content)}</p>
+          <div class="message-time">${formatTime(m.created_at)}</div>
+        </div>`;
+    }).join('');
+
+    area.scrollTop = area.scrollHeight;
+  }
+
+  // ── Send message ──────────────────────────────────────────────────────────
+  document.getElementById('send-btn').addEventListener('click', async () => {
+    const content = document.getElementById('message-content').value.trim();
+    if (!content) return;
+
+    const btn = document.getElementById('send-btn');
+    btn.disabled = true;
+    btn.textContent = 'Sending...';
+
+    try {
+      const resp = await fetch(`/messaging/capsules/${capsuleId}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content })
+      });
+      const data = await resp.json();
+
+      if (resp.ok) {
+        document.getElementById('message-content').value = '';
+        loadCapsule(); // refresh
+      } else {
+        showAlert(data.error || 'Failed to send message.');
+      }
+    } catch (e) {
+      showAlert('Network error. Please try again.');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Send Message';
+    }
+  });
+
+  // ── Seal capsule ──────────────────────────────────────────────────────────
+  async function sealCapsule() {
+    if (!confirm('Seal this capsule? You will not be able to add more messages after sealing.')) return;
+
+    try {
+      const resp = await fetch(`/messaging/capsules/${capsuleId}/seal`, { method: 'POST' });
+      const data = await resp.json();
+
+      if (resp.ok) {
+        showAlert('Capsule sealed. Your therapist can now read it. 🔒', 'success');
+        setTimeout(() => loadCapsule(), 1000);
+      } else {
+        showAlert(data.error || 'Failed to seal capsule.');
+      }
+    } catch (e) {
+      showAlert('Network error.');
+    }
+  }
+
+  // ── Archive capsule ───────────────────────────────────────────────────────
+  window.archiveCapsule = async function() {
+    if (!confirm('Archive this capsule?')) return;
+
+    try {
+      const resp = await fetch(`/messaging/capsules/${capsuleId}/archive`, { method: 'POST' });
+      const data = await resp.json();
+
+      if (resp.ok) {
+        window.location = '/messaging/inbox';
+      } else {
+        showAlert(data.error || 'Failed to archive.');
+      }
+    } catch (e) {
+      showAlert('Network error.');
+    }
+  };
+
+  // Enter to send
+  document.getElementById('message-content').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && e.ctrlKey) document.getElementById('send-btn').click();
+  });
+
+  loadCapsule();
+});
+</script>
 {% endblock %}

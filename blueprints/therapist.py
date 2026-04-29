@@ -2,8 +2,10 @@ from flask import Blueprint, request, jsonify, session, render_template, redirec
 from models import (db, User, ClientTherapistRelationship, Capsule, Message,
                     TherapeuticPrompt, PromptResponse, Notification, ActivityLog)
 from datetime import datetime, date
+import logging
 
 therapist_bp = Blueprint('therapist', __name__)
+logger = logging.getLogger(__name__)
 
 
 def require_therapist():
@@ -59,6 +61,14 @@ def add_client_page():
     return render_template('therapist/add_client.html')
 
 
+@therapist_bp.route('/prioritized', methods=['GET'])
+def prioritized_capsules_page():
+    """Show prioritized capsules dashboard"""
+    if 'user_id' not in session or session.get('user_type') != 'therapist':
+        return redirect('/auth/login')
+    return render_template('therapist/prioritized_capsules.html')
+
+
 # ========================================
 # CLIENT RELATIONSHIPS (API)
 # ========================================
@@ -77,6 +87,16 @@ def get_clients():
     clients = []
     for rel in relationships:
         client = User.query.get(rel.client_id)
+
+        # Get unread capsules count for this client (CRITICAL + HIGH priority)
+        unread_count = Capsule.query.filter_by(
+            client_id=client.user_id,
+            therapist_id=therapist_id,
+            priority_reviewed_by_therapist=False
+        ).filter(
+            Capsule.priority_level.in_(['CRITICAL', 'HIGH'])
+        ).count()
+
         clients.append({
             'relationship_id': rel.relationship_id,
             'client_id': client.user_id,
@@ -84,7 +104,8 @@ def get_clients():
             'last_name': client.last_name,
             'email': client.email,
             'relationship_start': rel.relationship_start_date.isoformat(),
-            'client_goals': rel.client_goals
+            'client_goals': rel.client_goals,
+            'unread_priority_count': unread_count
         })
 
     return jsonify({'clients': clients}), 200
@@ -249,7 +270,7 @@ def disconnect_client(client_id):
         relationship.relationship_end_date = date.today()
         if data.get('reason'):
             relationship.therapist_notes = (relationship.therapist_notes or '') + \
-                f'\n[Ended {date.today().isoformat()}]: {data["reason"]}'
+                                           f'\n[Ended {date.today().isoformat()}]: {data["reason"]}'
         relationship.updated_at = datetime.utcnow()
 
         notification = Notification(
@@ -298,7 +319,7 @@ def get_client_detail(client_id):
 
     client = User.query.get(client_id)
 
-    # Get recent capsules
+    # Get recent capsules with priority info
     recent_capsules = Capsule.query.filter_by(
         client_id=client_id,
         therapist_id=therapist_id
@@ -323,6 +344,8 @@ def get_client_detail(client_id):
             'title': c.title,
             'user_tag': c.user_tag,
             'status': c.status,
+            'priority_level': c.priority_level or 'LOW',
+            'priority_score': float(c.priority_score) if c.priority_score else 0,
             'created_at': c.created_at.isoformat()
         } for c in recent_capsules]
     }), 200
@@ -356,21 +379,280 @@ def update_client_notes(client_id):
 
 
 # ========================================
+# PRIORITIZED CAPSULES (NEW)
+# ========================================
+
+@therapist_bp.route('/api/prioritized-capsules', methods=['GET'])
+@require_therapist()
+def get_prioritized_capsules():
+    """
+    Get all capsules sorted by priority (CRITICAL → HIGH → MEDIUM → LOW)
+    Includes unread/reviewed status tracking
+    """
+    therapist_id = session['user_id']
+
+    # Get filter parameters
+    status_filter = request.args.get('status', 'sealed,archived')  # Default to sealed and archived
+    show_reviewed = request.args.get('show_reviewed', 'false').lower() == 'true'
+    limit = request.args.get('limit', 100, type=int)
+
+    # Parse status filter
+    statuses = [s.strip() for s in status_filter.split(',')]
+
+    # Priority order for sorting
+    priority_order = {'CRITICAL': 0, 'HIGH': 1, 'MEDIUM': 2, 'LOW': 3}
+
+    # Get capsules for this therapist
+    query = Capsule.query.filter_by(therapist_id=therapist_id)
+
+    if statuses:
+        query = query.filter(Capsule.status.in_(statuses))
+
+    if not show_reviewed:
+        query = query.filter_by(priority_reviewed_by_therapist=False)
+
+    capsules = query.all()
+
+    # Filter out capsules without messages
+    valid_capsules = []
+    for capsule in capsules:
+        message_count = Message.query.filter_by(capsule_id=capsule.capsule_id).count()
+        if message_count > 0:
+            valid_capsules.append(capsule)
+
+    # Sort by priority
+    valid_capsules.sort(key=lambda c: priority_order.get(c.priority_level or 'LOW', 3))
+
+    # Apply limit after sorting (prioritize critical ones)
+    valid_capsules = valid_capsules[:limit]
+
+    # Get client names
+    client_ids = list({c.client_id for c in valid_capsules})
+    clients = User.query.filter(User.user_id.in_(client_ids)).all()
+    client_map = {u.user_id: f"{u.first_name} {u.last_name}" for u in clients}
+
+    # Build response
+    result = []
+    for capsule in valid_capsules:
+        # Count messages
+        message_count = Message.query.filter_by(capsule_id=capsule.capsule_id).count()
+
+        # Get last message
+        last_message = (
+            Message.query
+            .filter_by(capsule_id=capsule.capsule_id)
+            .order_by(Message.created_at.desc())
+            .first()
+        )
+
+        # Get first message (for preview)
+        first_message = (
+            Message.query
+            .filter_by(capsule_id=capsule.capsule_id)
+            .order_by(Message.created_at.asc())
+            .first()
+        )
+
+        # Get client object for more details
+        client = User.query.get(capsule.client_id)
+
+        result.append({
+            'capsule_id': capsule.capsule_id,
+            'title': capsule.title,
+            'client_id': capsule.client_id,
+            'client_name': client_map.get(capsule.client_id, 'Unknown'),
+            'client_email': client.email if client else None,
+            'priority_level': capsule.priority_level or 'LOW',
+            'priority_score': float(capsule.priority_score) if capsule.priority_score else 0,
+            'priority_reasons': capsule.priority_reasons,
+            'priority_analyzed_at': capsule.priority_analyzed_at.isoformat() if capsule.priority_analyzed_at else None,
+            'priority_reviewed_by_therapist': capsule.priority_reviewed_by_therapist,
+            'message_count': message_count,
+            'first_message_preview': first_message.content[:150] + '...' if first_message and len(
+                first_message.content) > 150 else (first_message.content if first_message else ''),
+            'last_message_at': last_message.created_at.isoformat() if last_message else None,
+            'status': capsule.status,
+            'user_tag': capsule.user_tag,
+            'created_at': capsule.created_at.isoformat(),
+            'sealed_at': capsule.sealed_at.isoformat() if capsule.sealed_at else None
+        })
+
+    # Add summary statistics
+    summary = {
+        'critical_count': len(
+            [c for c in result if c['priority_level'] == 'CRITICAL' and not c['priority_reviewed_by_therapist']]),
+        'high_count': len(
+            [c for c in result if c['priority_level'] == 'HIGH' and not c['priority_reviewed_by_therapist']]),
+        'total_unreviewed': len([c for c in result if not c['priority_reviewed_by_therapist']]),
+        'total_capsules': len(result)
+    }
+
+    return jsonify({
+        'capsules': result,
+        'summary': summary
+    }), 200
+
+
+@therapist_bp.route('/api/prioritized-capsules/summary', methods=['GET'])
+@require_therapist()
+def get_priority_summary():
+    """Get summary counts of capsules by priority level"""
+    therapist_id = session['user_id']
+
+    # Get all unreviewed capsules
+    capsules = Capsule.query.filter_by(
+        therapist_id=therapist_id,
+        priority_reviewed_by_therapist=False
+    ).filter(Capsule.status.in_(['sealed', 'archived'])).all()
+
+    # Count by priority
+    counts = {
+        'CRITICAL': 0,
+        'HIGH': 0,
+        'MEDIUM': 0,
+        'LOW': 0
+    }
+
+    for capsule in capsules:
+        level = capsule.priority_level or 'LOW'
+        if level in counts:
+            counts[level] += 1
+
+    return jsonify({
+        'unreviewed_counts': counts,
+        'total_unreviewed': sum(counts.values())
+    }), 200
+
+
+@therapist_bp.route('/api/capsules/<int:capsule_id>/mark-reviewed', methods=['POST'])
+@require_therapist()
+def mark_capsule_reviewed(capsule_id):
+    """Mark a capsule as reviewed by the therapist"""
+    therapist_id = session['user_id']
+
+    capsule = Capsule.query.filter_by(
+        capsule_id=capsule_id,
+        therapist_id=therapist_id
+    ).first()
+
+    if not capsule:
+        return jsonify({'error': 'Capsule not found'}), 404
+
+    capsule.priority_reviewed_by_therapist = True
+    db.session.commit()
+
+    return jsonify({
+        'message': 'Capsule marked as reviewed',
+        'capsule_id': capsule_id
+    }), 200
+
+
+@therapist_bp.route('/api/capsules/<int:capsule_id>/reanalyze', methods=['POST'])
+@require_therapist()
+def reanalyze_capsule(capsule_id):
+    """Manually trigger priority re-analysis for a capsule"""
+    therapist_id = session['user_id']
+
+    capsule = Capsule.query.filter_by(
+        capsule_id=capsule_id,
+        therapist_id=therapist_id
+    ).first()
+
+    if not capsule:
+        return jsonify({'error': 'Capsule not found'}), 404
+
+    # Import here to avoid circular imports
+    from services.sentiment_analyzer import analyzer
+    from threading import Thread
+
+    def analyze_in_background():
+        try:
+            from flask import current_app
+            with current_app.app_context():
+                messages = Message.query.filter_by(capsule_id=capsule_id).all()
+                message_texts = [m.content for m in messages]
+
+                analysis = analyzer.analyze_capsule_messages(message_texts)
+
+                capsule.priority_level = analysis['priority_level']
+                capsule.priority_score = analysis['priority_score']
+                capsule.priority_analyzed_at = datetime.utcnow()
+                capsule.priority_reasons = {
+                    'reasons': analysis['reasons'],
+                    'risk_flags': analysis['risk_flags'],
+                    'sentiment_summary': analysis['sentiment_summary']
+                }
+                # Reset reviewed status when re-analyzing
+                capsule.priority_reviewed_by_therapist = False
+                db.session.commit()
+
+                logger.info(f"Manual re-analysis completed for capsule {capsule_id}")
+        except Exception as e:
+            logger.error(f"Manual re-analysis failed for capsule {capsule_id}: {str(e)}")
+
+    thread = Thread(target=analyze_in_background)
+    thread.daemon = True
+    thread.start()
+
+    return jsonify({'message': 'Priority re-analysis triggered'}), 200
+
+
+@therapist_bp.route('/api/capsules/<int:capsule_id>/priority-details', methods=['GET'])
+@require_therapist()
+def get_capsule_priority_details(capsule_id):
+    """Get detailed priority analysis for a specific capsule"""
+    therapist_id = session['user_id']
+
+    capsule = Capsule.query.filter_by(
+        capsule_id=capsule_id,
+        therapist_id=therapist_id
+    ).first()
+
+    if not capsule:
+        return jsonify({'error': 'Capsule not found'}), 404
+
+    # Get all messages for context
+    messages = Message.query.filter_by(capsule_id=capsule_id).order_by(Message.created_at).all()
+
+    return jsonify({
+        'capsule_id': capsule.capsule_id,
+        'title': capsule.title,
+        'priority_level': capsule.priority_level or 'LOW',
+        'priority_score': float(capsule.priority_score) if capsule.priority_score else 0,
+        'priority_reasons': capsule.priority_reasons,
+        'priority_analyzed_at': capsule.priority_analyzed_at.isoformat() if capsule.priority_analyzed_at else None,
+        'priority_reviewed_by_therapist': capsule.priority_reviewed_by_therapist,
+        'message_count': len(messages),
+        'messages': [{
+            'content': m.content,
+            'created_at': m.created_at.isoformat(),
+            'sender_type': 'client' if m.sender_id == capsule.client_id else 'therapist'
+        } for m in messages]
+    }), 200
+
+
+# ========================================
 # CAPSULES (View Client Capsules)
 # ========================================
 
 @therapist_bp.route('/capsules', methods=['GET'])
 @require_therapist()
 def get_therapist_capsules():
-    """Get all capsules for therapist's clients"""
+    """Get all capsules for therapist's clients (with priority info)"""
     therapist_id = session['user_id']
 
     status = request.args.get('status', 'sealed')  # Default to sealed only
+    sort_by_priority = request.args.get('sort_by_priority', 'false').lower() == 'true'
 
     capsules = Capsule.query.filter_by(
         therapist_id=therapist_id,
         status=status
-    ).order_by(Capsule.created_at.desc()).limit(50).all()
+    ).order_by(Capsule.created_at.desc()).all()
+
+    # Sort by priority if requested
+    if sort_by_priority:
+        priority_order = {'CRITICAL': 0, 'HIGH': 1, 'MEDIUM': 2, 'LOW': 3}
+        capsules.sort(key=lambda c: priority_order.get(c.priority_level or 'LOW', 3))
 
     return jsonify({
         'capsules': [{
@@ -379,6 +661,9 @@ def get_therapist_capsules():
             'title': c.title,
             'user_tag': c.user_tag,
             'status': c.status,
+            'priority_level': c.priority_level or 'LOW',
+            'priority_score': float(c.priority_score) if c.priority_score else 0,
+            'priority_reviewed_by_therapist': c.priority_reviewed_by_therapist,
             'created_at': c.created_at.isoformat(),
             'sealed_at': c.sealed_at.isoformat() if c.sealed_at else None
         } for c in capsules]
@@ -388,7 +673,7 @@ def get_therapist_capsules():
 @therapist_bp.route('/capsules/<int:capsule_id>', methods=['GET'])
 @require_therapist()
 def get_capsule_detail(capsule_id):
-    """Get capsule details with messages"""
+    """Get capsule details with messages and priority info"""
     therapist_id = session['user_id']
 
     capsule = Capsule.query.filter_by(
@@ -404,6 +689,11 @@ def get_capsule_detail(capsule_id):
         capsule_id=capsule_id
     ).order_by(Message.created_at).all()
 
+    # Auto-mark as reviewed when therapist views a capsule
+    if not capsule.priority_reviewed_by_therapist and capsule.status in ['sealed', 'archived']:
+        capsule.priority_reviewed_by_therapist = True
+        db.session.commit()
+
     return jsonify({
         'capsule': {
             'capsule_id': capsule.capsule_id,
@@ -411,6 +701,10 @@ def get_capsule_detail(capsule_id):
             'title': capsule.title,
             'user_tag': capsule.user_tag,
             'status': capsule.status,
+            'priority_level': capsule.priority_level or 'LOW',
+            'priority_score': float(capsule.priority_score) if capsule.priority_score else 0,
+            'priority_reasons': capsule.priority_reasons,
+            'priority_analyzed_at': capsule.priority_analyzed_at.isoformat() if capsule.priority_analyzed_at else None,
             'created_at': capsule.created_at.isoformat(),
             'sealed_at': capsule.sealed_at.isoformat() if capsule.sealed_at else None
         },
@@ -591,13 +885,13 @@ def add_response_feedback(response_id):
 
 
 # ========================================
-# DASHBOARD
+# DASHBOARD (Enhanced with Priority Info)
 # ========================================
 
-@therapist_bp.route('/dashboard', methods=['GET'])
+@therapist_bp.route('/api/dashboard', methods=['GET'])
 @require_therapist()
 def get_dashboard():
-    """Get therapist dashboard overview"""
+    """Get therapist dashboard overview with priority stats"""
     therapist_id = session['user_id']
 
     # Active clients
@@ -613,20 +907,34 @@ def get_dashboard():
         PromptResponse.therapist_feedback == None
     ).count()
 
-    # Recent capsules
-    recent_capsules = Capsule.query.filter_by(
+    # Priority capsule statistics
+    unreviewed_capsules = Capsule.query.filter_by(
         therapist_id=therapist_id,
-        status='sealed'
-    ).order_by(Capsule.sealed_at.desc()).limit(5).all()
+        priority_reviewed_by_therapist=False
+    ).filter(Capsule.status.in_(['sealed', 'archived'])).all()
+
+    priority_counts = {
+        'critical': len([c for c in unreviewed_capsules if c.priority_level == 'CRITICAL']),
+        'high': len([c for c in unreviewed_capsules if c.priority_level == 'HIGH']),
+        'medium': len([c for c in unreviewed_capsules if c.priority_level == 'MEDIUM']),
+        'low': len([c for c in unreviewed_capsules if c.priority_level == 'LOW'])
+    }
+
+    # Recent capsules with priority (last 5 sealed capsules)
+    recent_capsules = Capsule.query.filter_by(
+        therapist_id=therapist_id
+    ).order_by(Capsule.created_at.desc()).limit(5).all()
+
+    total_capsules = Capsule.query.filter_by(therapist_id=therapist_id).count()
 
     return jsonify({
         'active_clients': active_clients,
         'pending_responses': pending_responses,
-        'recent_capsules': [{
-            'capsule_id': c.capsule_id,
-            'client_id': c.client_id,
-            'title': c.title,
-            'user_tag': c.user_tag,
-            'sealed_at': c.sealed_at.isoformat()
-        } for c in recent_capsules]
+        'total_capsules': total_capsules,  # ← add this
+        'unreviewed_priority_capsules': {
+            'total': len(unreviewed_capsules),
+            'by_priority': priority_counts
+        }
+
     }), 200
+

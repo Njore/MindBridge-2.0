@@ -4,63 +4,183 @@
 
 {% block content %}
 <div class="container">
+  <div class="card">
+    <h1>Welcome Back, {{ session.first_name }}! 🌟</h1>
+    <p style="color:var(--text-muted);font-size:1.1rem;">Your safe space for reflection and growth</p>
+  </div>
+
+  <!-- Therapist connection banner -->
+  <div id="therapist-banner"></div>
+
+  <!-- Stats -->
+  <div class="grid grid-3">
+    <div class="card" style="text-align:center;">
+      <div style="font-size:3rem;margin-bottom:1rem;">📝</div>
+      <h3>7 Pockets</h3>
+      <p id="stat-pockets" style="font-size:2rem;color:var(--primary);margin:1rem 0;">—</p>
+      <p style="color:var(--text-muted);">Entries this week</p>
+      <a href="/client/journal" class="btn btn-primary" style="margin-top:1rem;">Open Journal</a>
+    </div>
+    <div class="card" style="text-align:center;">
+      <div style="font-size:3rem;margin-bottom:1rem;">💌</div>
+      <h3>Capsules</h3>
+      <p id="stat-capsules" style="font-size:2rem;color:var(--primary);margin:1rem 0;">—</p>
+      <p style="color:var(--text-muted);">Total capsules</p>
+      <a href="/messaging/inbox" class="btn btn-primary" style="margin-top:1rem;">View All</a>
+    </div>
+    <div class="card" style="text-align:center;">
+      <div style="font-size:3rem;margin-bottom:1rem;">🆘</div>
+      <h3>Crisis Support</h3>
+      <p style="font-size:2rem;color:var(--primary);margin:1rem 0;">24/7</p>
+      <p style="color:var(--text-muted);">Always available</p>
+      <a href="/crisis/resources" class="btn btn-secondary" style="margin-top:1rem;">Get Help</a>
+    </div>
+  </div>
+
+  <div class="grid grid-2">
+    <!-- Quick actions -->
     <div class="card">
-        <h1>Welcome Back, {{ session.first_name }}! 🌟</h1>
-        <p style="color: var(--text-muted); font-size: 1.1rem;">Your safe space for reflection and growth</p>
+      <h3 style="margin-bottom:1rem;">Quick Actions</h3>
+      <div style="display:flex;flex-direction:column;gap:1rem;">
+        <a href="/client/journal" class="btn btn-outline">✏️ Write in Journal</a>
+        <a href="/client/prompts" class="btn btn-outline">🎯 View Prompts</a>
+        <a href="/client/create-capsule" class="btn btn-outline">💌 New Capsule</a>
+        <a href="/crisis/techniques" class="btn btn-outline">🧘 Deescalation Techniques</a>
+      </div>
     </div>
 
-    <div class="grid grid-3">
-        <div class="card" style="text-align: center;">
-            <div style="font-size: 3rem; margin-bottom: 1rem;">📝</div>
-            <h3>7 Pockets</h3>
-            <p style="font-size: 2rem; color: var(--primary); margin: 1rem 0;">7</p>
-            <p style="color: var(--text-muted);">Private journal entries</p>
-            <a href="/client/journal" class="btn btn-primary" style="margin-top: 1rem;">Open Journal</a>
-        </div>
-
-        <div class="card" style="text-align: center;">
-            <div style="font-size: 3rem; margin-bottom: 1rem;">💌</div>
-            <h3>Capsules</h3>
-            <p style="font-size: 2rem; color: var(--primary); margin: 1rem 0;">-</p>
-            <p style="color: var(--text-muted);">Communication with therapist</p>
-            <a href="/messaging/inbox" class="btn btn-primary" style="margin-top: 1rem;">View Capsules</a>
-        </div>
-
-        <div class="card" style="text-align: center;">
-            <div style="font-size: 3rem; margin-bottom: 1rem;">🆘</div>
-            <h3>Crisis Support</h3>
-            <p style="font-size: 2rem; color: var(--primary); margin: 1rem 0;">24/7</p>
-            <p style="color: var(--text-muted);">Always available</p>
-            <a href="/crisis/resources" class="btn btn-secondary" style="margin-top: 1rem;">Get Help</a>
-        </div>
+    <!-- Recent capsules -->
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+        <h3 style="margin:0;">Recent Capsules</h3>
+        <a href="/messaging/inbox" style="font-size:0.85rem;color:var(--primary);">See all →</a>
+      </div>
+      <div id="recent-capsules-list">
+        <p style="color:var(--text-muted);text-align:center;padding:1rem;">Loading...</p>
+      </div>
     </div>
+  </div>
 
-    <div class="grid grid-2">
-        <div class="card">
-            <h3 style="margin-bottom: 1rem;">Quick Actions</h3>
-            <div style="display: flex; flex-direction: column; gap: 1rem;">
-                <a href="/client/journal" class="btn btn-outline">✏️ Write in Journal</a>
-                <a href="/client/prompts" class="btn btn-outline">🎯 View Prompts</a>
-                <a href="/crisis/techniques" class="btn btn-outline">🧘 Deescalation Techniques</a>
-            </div>
-        </div>
-
-        <div class="card">
-            <h3 style="margin-bottom: 1rem;">Privacy & Data</h3>
-            <div style="display: flex; flex-direction: column; gap: 1rem;">
-                <a href="/auth/profile" class="btn btn-outline">👤 My Profile</a>
-                <a href="/client/export/pockets" class="btn btn-outline">📥 Export Data (PDF)</a>
-            </div>
-            <hr style="margin: 1.5rem 0;">
-            <p style="font-size: 0.9rem; color: var(--text-muted);">
-                <strong>PRD Compliant:</strong> Export, manage privacy, delete account anytime.
-            </p>
-        </div>
+  <!-- Privacy -->
+  <div class="card">
+    <h3 style="margin-bottom:1rem;">Privacy & Data</h3>
+    <div style="display:flex;gap:1rem;flex-wrap:wrap;">
+      <a href="/auth/profile" class="btn btn-outline">👤 My Profile</a>
+      <a href="/client/export/pockets" class="btn btn-outline">📥 Export Journal (PDF)</a>
     </div>
+    <hr style="margin:1.5rem 0;">
+    <p style="font-size:0.9rem;color:var(--text-muted);">
+      <strong>PRD Compliant:</strong> Export, manage privacy, delete account anytime.
+    </p>
+  </div>
 
-    <div class="alert alert-warning">
-        <h4>🆘 Need Immediate Help?</h4>
-        <p>If experiencing a crisis, <a href="/crisis/resources" style="font-weight: bold;">click here</a> or call Kenya Red Cross at <strong>1199</strong> (24/7).</p>
-    </div>
+  <div class="alert alert-warning">
+    <h4>🆘 Need Immediate Help?</h4>
+    <p>If experiencing a crisis, <a href="/crisis/resources" style="font-weight:bold;">click here</a> or call Kenya Red Cross at <strong>1199</strong> (24/7).</p>
+  </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', async () => {
+
+  function formatDate(str) {
+    return new Date(str).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' });
+  }
+
+  function escapeHtml(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // ── Stats ──────────────────────────────────────────────────────────────────
+  try {
+    const resp = await fetch('/client/api/dashboard');
+    const data = await resp.json();
+    if (resp.ok) {
+      document.getElementById('stat-pockets').textContent = data.recent_pockets ?? 0;
+    }
+  } catch (e) {}
+
+  // ── Therapist banner ───────────────────────────────────────────────────────
+  try {
+    const resp = await fetch('/client/api/my-therapist');
+    const data = await resp.json();
+    const banner = document.getElementById('therapist-banner');
+
+    if (resp.ok && data.therapist) {
+      const t = data.therapist;
+      const r = data.relationship;
+      banner.innerHTML = `
+        <div class="card" style="border-left:4px solid var(--primary);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;">
+          <div style="display:flex;align-items:center;gap:1rem;">
+            <div style="width:50px;height:50px;border-radius:50%;background:var(--primary);display:flex;align-items:center;justify-content:center;color:white;font-weight:700;font-size:1.2rem;">
+              ${t.first_name[0]}${t.last_name[0]}
+            </div>
+            <div>
+              <div style="font-weight:600;font-size:1.05rem;">Your Therapist: ${t.first_name} ${t.last_name}</div>
+              <div style="color:var(--text-muted);font-size:0.9rem;">${t.email}</div>
+              ${r.client_goals ? `<div style="color:var(--text-muted);font-size:0.85rem;margin-top:0.2rem;">🎯 Goals: ${escapeHtml(r.client_goals)}</div>` : ''}
+            </div>
+          </div>
+          <div style="display:flex;gap:0.75rem;">
+            <a href="/client/create-capsule" class="btn btn-primary" style="font-size:0.9rem;">💌 New Capsule</a>
+            <a href="/client/prompts" class="btn btn-outline" style="font-size:0.9rem;">🎯 My Prompts</a>
+          </div>
+        </div>`;
+    } else {
+      banner.innerHTML = `
+        <div class="card" style="border-left:4px solid var(--warning);text-align:center;padding:1.5rem;">
+          <p style="color:var(--text-muted);">⚠️ You are not connected to a therapist yet.</p>
+          <p style="font-size:0.9rem;color:var(--text-muted);">A therapist will connect with you once you register with their platform.</p>
+        </div>`;
+    }
+  } catch (e) {}
+
+  // ── Recent capsules ────────────────────────────────────────────────────────
+  try {
+    const resp = await fetch('/messaging/capsules');
+    const data = await resp.json();
+    const container = document.getElementById('recent-capsules-list');
+
+    // Update stat counter
+    document.getElementById('stat-capsules').textContent = data.capsules?.length ?? 0;
+
+    if (!resp.ok || !data.capsules || data.capsules.length === 0) {
+      container.innerHTML = `
+        <p style="color:var(--text-muted);text-align:center;padding:1rem;">No capsules yet.</p>
+        <a href="/client/create-capsule" class="btn btn-primary" style="width:100%;text-align:center;margin-top:0.5rem;">➕ Create First Capsule</a>`;
+      return;
+    }
+
+    const statusColor = { open: 'var(--success)', sealed: 'var(--primary)', archived: 'var(--text-muted)' };
+    const recent = data.capsules.slice(0, 5);
+
+    container.innerHTML = recent.map(c => `
+      <a href="/messaging/conversation/${c.capsule_id}"
+         style="display:flex;justify-content:space-between;align-items:center;padding:0.75rem 0;border-bottom:1px solid var(--border);text-decoration:none;color:inherit;">
+        <div>
+          <div style="font-weight:600;font-size:0.95rem;">${escapeHtml(c.title)}</div>
+          <div style="font-size:0.8rem;color:var(--text-muted);">${formatDate(c.created_at)}</div>
+        </div>
+        <span style="font-size:0.75rem;font-weight:600;padding:0.2rem 0.6rem;border-radius:20px;background:${statusColor[c.status]}22;color:${statusColor[c.status]};">
+          ${c.status.toUpperCase()}
+        </span>
+      </a>
+    `).join('');
+
+    if (data.capsules.length > 5) {
+      container.innerHTML += `
+        <a href="/messaging/inbox" style="display:block;text-align:center;margin-top:0.75rem;color:var(--primary);font-size:0.9rem;">
+          See all ${data.capsules.length} capsules →
+        </a>`;
+    }
+
+  } catch (e) {
+    document.getElementById('recent-capsules-list').innerHTML =
+      `<p style="color:var(--text-muted);text-align:center;padding:1rem;">Failed to load capsules.</p>`;
+  }
+
+});
+</script>
 {% endblock %}

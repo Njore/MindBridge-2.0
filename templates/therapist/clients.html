@@ -4,20 +4,178 @@
 
 {% block content %}
 <div class="container">
-    <div class="card">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
-            <div>
-                <h1>👥 My Clients</h1>
-                <p style="color: var(--text-muted);">Manage your therapeutic relationships</p>
-            </div>
-            <a href="/therapist/add-client" class="btn btn-primary">➕ Add Client</a>
-        </div>
-
-        <div style="text-align: center; padding: 3rem; color: var(--text-muted);">
-            <div style="font-size: 4rem; margin-bottom: 1rem;">👥</div>
-            <h3>No active clients yet</h3>
-            <p>Connect with clients to begin therapeutic relationships</p>
-        </div>
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;">
+      <div>
+        <h1>👥 My Clients</h1>
+        <p style="color:var(--text-muted);">Manage your therapeutic relationships</p>
+      </div>
+        <a href="/therapist/add-client" class="btn btn-primary">➕ Add Client</a>
     </div>
+
+    <!-- Alert area -->
+    <div id="alert-area"></div>
+
+    <!-- Loading state -->
+    <div id="loading" style="text-align:center;padding:3rem;color:var(--text-muted);">
+      <p>Loading clients...</p>
+    </div>
+
+    <!-- Empty state -->
+    <div id="empty-state" style="display:none;text-align:center;padding:3rem;color:var(--text-muted);">
+      <div style="font-size:4rem;margin-bottom:1rem;">👥</div>
+      <h3>No active clients yet</h3>
+      <p>Connect with clients to begin therapeutic relationships</p>
+      <a href="/therapist/add-client" class="btn btn-primary" style="margin-top:1rem;">➕ Add Your First Client</a>
+    </div>
+
+    <!-- Clients list -->
+    <div id="clients-list" style="display:none;"></div>
+  </div>
 </div>
+
+<!-- Disconnect confirm modal -->
+<div id="disconnectModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;">
+  <div class="card" style="max-width:400px;width:90%;margin:0 auto;">
+    <h3 style="margin-bottom:1rem;">End Relationship</h3>
+    <p>Are you sure you want to end your relationship with <strong id="disconnect-client-name"></strong>?</p>
+    <div class="form-group" style="margin-top:1rem;">
+      <label>Reason (optional)</label>
+      <textarea id="disconnect-reason" class="form-control" rows="2" placeholder="Reason for ending..."></textarea>
+    </div>
+    <div style="display:flex;gap:1rem;margin-top:1rem;">
+      <button class="btn btn-outline" onclick="closeDisconnectModal()">Cancel</button>
+      <button class="btn btn-danger" id="confirm-disconnect-btn">End Relationship</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+
+  let disconnectClientId = null;
+
+  // ── Load clients ────────────────────────────────────────────────────────────
+  async function loadClients() {
+    try {
+      const resp = await fetch('/therapist/api/clients');
+      const data = await resp.json();
+
+      document.getElementById('loading').style.display = 'none';
+
+      if (!resp.ok) {
+        showAlert(data.error || 'Failed to load clients.');
+        return;
+      }
+
+      if (data.clients.length === 0) {
+        document.getElementById('empty-state').style.display = 'block';
+        return;
+      }
+
+      renderClients(data.clients);
+    } catch (err) {
+      document.getElementById('loading').style.display = 'none';
+      showAlert('Network error. Please refresh the page.');
+    }
+  }
+
+  function renderClients(clients) {
+    const list = document.getElementById('clients-list');
+    list.style.display = 'block';
+
+    list.innerHTML = clients.map(c => `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:1.25rem;border:1px solid var(--border);border-radius:8px;margin-bottom:1rem;">
+        <div style="display:flex;align-items:center;gap:1rem;">
+          <div style="width:48px;height:48px;border-radius:50%;background:var(--primary-light);display:flex;align-items:center;justify-content:center;color:white;font-weight:600;font-size:1.2rem;">
+            ${escapeHtml(c.first_name[0])}${escapeHtml(c.last_name[0])}
+          </div>
+          <div>
+            <div style="font-weight:600;font-size:1.05rem;">${escapeHtml(c.first_name)} ${escapeHtml(c.last_name)}</div>
+            <div style="color:var(--text-muted);font-size:0.9rem;">${escapeHtml(c.email)}</div>
+            ${c.client_goals ? `<div style="color:var(--text-muted);font-size:0.85rem;margin-top:0.25rem;">🎯 ${escapeHtml(c.client_goals)}</div>` : ''}
+            <div style="color:var(--text-muted);font-size:0.8rem;margin-top:0.25rem;">Connected since ${formatDate(c.relationship_start_date)}</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:0.75rem;flex-wrap:wrap;justify-content:flex-end;">
+          <a href="/therapist/clients/${c.client_id}" class="btn btn-outline" style="font-size:0.85rem;padding:0.5rem 1rem;">View Details</a>
+          <a href="/therapist/create-prompt?client=${c.relationship_id}" class="btn btn-secondary" style="font-size:0.85rem;padding:0.5rem 1rem;">📝 Send Prompt</a>
+          <button class="btn btn-danger" style="font-size:0.85rem;padding:0.5rem 1rem;" onclick="openDisconnectModal(${c.client_id}, '${escapeHtml(c.first_name)} ${escapeHtml(c.last_name)}')">End</button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  // ── Disconnect modal ────────────────────────────────────────────────────────
+  window.openDisconnectModal = function(clientId, name) {
+    disconnectClientId = clientId;
+    document.getElementById('disconnect-client-name').textContent = name;
+    document.getElementById('disconnect-reason').value = '';
+    const modal = document.getElementById('disconnectModal');
+    modal.style.display = 'flex';
+  };
+
+  window.closeDisconnectModal = function() {
+    document.getElementById('disconnectModal').style.display = 'none';
+    disconnectClientId = null;
+  };
+
+  document.getElementById('confirm-disconnect-btn').addEventListener('click', async () => {
+    if (!disconnectClientId) return;
+    const reason = document.getElementById('disconnect-reason').value.trim();
+    const btn = document.getElementById('confirm-disconnect-btn');
+    btn.disabled = true;
+    btn.textContent = 'Ending...';
+
+    try {
+      const resp = await fetch(`/therapist/api/clients/${disconnectClientId}/disconnect`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason })
+      });
+      const data = await resp.json();
+      closeDisconnectModal();
+
+      if (resp.ok) {
+        showAlert('Relationship ended successfully.', 'success');
+        loadClients(); // refresh list
+      } else {
+        showAlert(data.error || 'Failed to end relationship.');
+      }
+    } catch (err) {
+      closeDisconnectModal();
+      showAlert('Network error. Please try again.');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'End Relationship';
+    }
+  });
+
+  // ── Helpers ─────────────────────────────────────────────────────────────────
+  function showAlert(message, type = 'danger') {
+    const alertArea = document.getElementById('alert-area');
+    alertArea.innerHTML = `
+      <div class="alert alert-${type}" role="alert" style="margin-bottom:1rem;">
+        ${message}
+        <button onclick="this.parentElement.remove()" style="float:right;background:none;border:none;cursor:pointer;font-size:1.2rem;">&times;</button>
+      </div>`;
+  }
+
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function formatDate(dateStr) {
+    return new Date(dateStr).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' });
+  }
+
+  // Kick off
+  loadClients();
+
+});
+</script>
 {% endblock %}

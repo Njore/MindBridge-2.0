@@ -251,30 +251,36 @@
     </style>
 
     {% block extra_css %}{% endblock %}
+
 </head>
 <body>
     <nav>
         <div class="nav-container">
-            <a href="/" class="logo">🧠 MindBridge</a>
+            <a href="/" class="logo"> MindBridge</a>
             <ul class="nav-links">
+                {% if session.user_type == 'client' %}
+                    <li><a href="/client/dashboard">Dashboard</a></li>
+                    <li><a href="/client/journal">7 Pockets</a></li>
+                    <li><a href="/messaging/inbox">Capsules</a></li>
+                    <li><a href="/crisis/resources">Crisis</a></li>
+                {% elif session.user_type == 'therapist' %}
+                    <li><a href="/therapist/dashboard">Dashboard</a></li>
+                    <li><a href="/therapist/clients">Clients</a></li>
+                    <li><a href="/messaging/inbox">Capsules</a></li>
+                {% elif session.user_type == 'admin' %}
+                    <li><a href="/admin/dashboard">Admin Panel</a></li>
+                    <li><a href="/admin/users">Users</a></li>
+                    <li><a href="/admin/erasure-requests">Erasure Requests</a></li>
+                {% endif %}
+
                 {% if session.user_id %}
-                    {% if session.user_type == 'client' %}
-                        <li><a href="/client/dashboard">Dashboard</a></li>
-                        <li><a href="/client/journal">7 Pockets</a></li>
-                        <li><a href="/messaging/inbox">Capsules</a></li>
-                        <li><a href="/crisis/resources">Crisis</a></li>
-                    {% else %}
-                        <li><a href="/therapist/dashboard">Dashboard</a></li>
-                        <li><a href="/therapist/clients">Clients</a></li>
-                        <li><a href="/messaging/inbox">Capsules</a></li>
-                    {% endif %}
                     <li><a href="/auth/logout">Logout</a></li>
                 {% else %}
-                    <li><a href="/">Home</a></li>
                     <li><a href="/auth/login">Login</a></li>
                     <li><a href="/auth/register">Register</a></li>
                     <li><a href="/crisis/resources">Crisis Help</a></li>
                 {% endif %}
+
             </ul>
         </div>
     </nav>
@@ -286,8 +292,8 @@
     <footer>
         <p>&copy; 2024 MindBridge - Digital Emotional Wellness Platform</p>
         <p style="margin-top: 0.5rem; font-size: 0.9rem;">
-            <a href="/privacy">Privacy Policy</a> | 
-            <a href="/terms">Terms of Service</a> | 
+            <a href="/legal/privacy">Privacy Policy</a> |
+            <a href="/legal/terms">Terms of Service</a> |
             <a href="/crisis/resources">Crisis Resources</a>
         </p>
         <p style="margin-top: 1rem; font-size: 0.85rem; opacity: 0.8;">
@@ -295,6 +301,6 @@
         </p>
     </footer>
 
-    {% block extra_js %}{% endblock %}
+    {% block scripts %}{% endblock %}
 </body>
 </html>

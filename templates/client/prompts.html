@@ -4,22 +4,179 @@
 
 {% block content %}
 <div class="container">
-    <div class="card">
-        <div class="card-header">
-            <h1>🎯 Therapeutic Prompts</h1>
-            <p style="color: var(--text-muted);">Exercises and reflections from your therapist</p>
-        </div>
-
-        <div style="display: flex; flex-direction: column; gap: 1.5rem;">
-            <div class="card" style="border-left: 4px solid var(--primary);">
-                <h3>Example Prompt: Daily Gratitude</h3>
-                <p style="color: var(--text-muted); margin: 0.5rem 0;">Type: Reflection | Duration: 10 minutes</p>
-                <p>List three things you're grateful for today and why they matter to you.</p>
-                <a href="/client/respond-to-prompt/1" class="btn btn-primary" style="margin-top: 1rem;">Respond</a>
-            </div>
-
-            <p style="text-align: center; color: var(--text-muted);">No active prompts. Your therapist will send exercises tailored to your goals.</p>
-        </div>
+  <div class="card">
+    <div class="card-header">
+      <h1>🎯 Therapeutic Prompts</h1>
+      <p style="color:var(--text-muted);">Exercises and reflections from your therapist</p>
     </div>
+
+    <div id="alert-area"></div>
+    <div id="prompts-container">
+      <p style="text-align:center;color:var(--text-muted);padding:2rem;">Loading prompts...</p>
+    </div>
+  </div>
 </div>
+
+<!-- Response modal -->
+<div id="responseModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;overflow-y:auto;">
+  <div style="max-width:600px;margin:2rem auto;padding:1rem;">
+    <div class="card">
+      <h3 id="modal-prompt-title" style="margin-bottom:0.5rem;"></h3>
+      <p id="modal-prompt-content" style="color:var(--text-muted);margin-bottom:1.5rem;padding:1rem;background:var(--bg-light);border-radius:8px;"></p>
+
+      <div class="form-group">
+        <label>Your Response *</label>
+        <textarea id="response-content" class="form-control" rows="5" placeholder="Write your response here..."></textarea>
+      </div>
+      <div class="form-group">
+        <label>Insights Gained <span style="color:var(--text-muted);font-weight:normal;">(optional)</span></label>
+        <textarea id="response-insights" class="form-control" rows="2" placeholder="What did you learn or notice?"></textarea>
+      </div>
+      <div class="form-group">
+        <label>How are you feeling? <span style="color:var(--text-muted);font-weight:normal;">(optional)</span></label>
+        <input type="text" id="response-emotion" class="form-control" placeholder="e.g. Calm, Anxious, Hopeful...">
+      </div>
+      <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:1.5rem;">
+        <input type="checkbox" id="share-with-therapist" checked style="width:auto;">
+        <label for="share-with-therapist" style="margin:0;font-weight:normal;">Share response with therapist</label>
+      </div>
+      <div style="display:flex;gap:1rem;">
+        <button class="btn btn-outline" onclick="closeResponseModal()">Cancel</button>
+        <button class="btn btn-primary" id="submit-response-btn" style="flex:1;">Submit Response</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<input type="hidden" id="active-prompt-id">
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', async () => {
+
+  const alertArea = document.getElementById('alert-area');
+
+  function showAlert(msg, type = 'danger') {
+    alertArea.innerHTML = `
+      <div class="alert alert-${type}">
+        ${msg}
+        <button onclick="this.parentElement.remove()" style="float:right;background:none;border:none;cursor:pointer;font-size:1.2rem;">&times;</button>
+      </div>`;
+  }
+
+  // ── Load prompts ──────────────────────────────────────────────────────────
+  try {
+    const resp = await fetch('/client/api/prompts');
+    const data = await resp.json();
+    const container = document.getElementById('prompts-container');
+
+    if (!resp.ok) { container.innerHTML = `<p style="color:var(--danger);text-align:center;padding:2rem;">${data.error}</p>`; return; }
+
+    if (data.prompts.length === 0) {
+      container.innerHTML = `
+        <div style="text-align:center;padding:3rem;color:var(--text-muted);">
+          <div style="font-size:4rem;margin-bottom:1rem;">🎯</div>
+          <h3>No prompts yet</h3>
+          <p>Your therapist will send exercises tailored to your goals.</p>
+        </div>`;
+      return;
+    }
+
+    container.innerHTML = data.prompts.map(p => `
+      <div style="border:2px solid ${p.already_responded ? 'var(--success)' : 'var(--primary)'};border-radius:12px;padding:1.5rem;margin-bottom:1.5rem;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:1rem;">
+          <div style="flex:1;">
+            <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.5rem;">
+              <span style="background:var(--primary-light);color:white;padding:0.2rem 0.6rem;border-radius:20px;font-size:0.8rem;font-weight:600;">${p.prompt_type.toUpperCase()}</span>
+              ${p.already_responded ? '<span style="background:var(--success);color:white;padding:0.2rem 0.6rem;border-radius:20px;font-size:0.8rem;">✓ Responded</span>' : ''}
+              ${p.expected_duration_minutes ? `<span style="color:var(--text-muted);font-size:0.85rem;">⏱ ${p.expected_duration_minutes} mins</span>` : ''}
+            </div>
+            <h3 style="margin-bottom:0.5rem;">${escapeHtml(p.title)}</h3>
+            <p style="color:var(--text-muted);margin-bottom:1rem;">${escapeHtml(p.description)}</p>
+            <div style="background:var(--bg-light);padding:1rem;border-radius:8px;margin-bottom:1rem;">
+              <p>${escapeHtml(p.prompt_content)}</p>
+            </div>
+            ${p.instructions ? `<p style="font-size:0.9rem;color:var(--text-muted);"><strong>Instructions:</strong> ${escapeHtml(p.instructions)}</p>` : ''}
+          </div>
+        </div>
+        <div style="margin-top:1rem;">
+          ${p.already_responded
+            ? `<button class="btn btn-outline" disabled style="opacity:0.6;">✓ Already Responded</button>`
+            : `<button class="btn btn-primary" onclick="openResponseModal(${p.prompt_id}, '${escapeHtml(p.title)}', '${escapeHtml(p.prompt_content)}')">✍️ Respond</button>`
+          }
+        </div>
+      </div>
+    `).join('');
+
+  } catch (e) {
+    document.getElementById('prompts-container').innerHTML =
+      `<p style="text-align:center;color:var(--danger);padding:2rem;">Failed to load prompts.</p>`;
+  }
+
+  // ── Response modal ────────────────────────────────────────────────────────
+  window.openResponseModal = function(promptId, title, content) {
+    document.getElementById('active-prompt-id').value = promptId;
+    document.getElementById('modal-prompt-title').textContent = title;
+    document.getElementById('modal-prompt-content').textContent = content;
+    document.getElementById('response-content').value = '';
+    document.getElementById('response-insights').value = '';
+    document.getElementById('response-emotion').value = '';
+    document.getElementById('responseModal').style.display = 'block';
+  };
+
+  window.closeResponseModal = function() {
+    document.getElementById('responseModal').style.display = 'none';
+  };
+
+  document.getElementById('submit-response-btn').addEventListener('click', async () => {
+    const promptId    = document.getElementById('active-prompt-id').value;
+    const content     = document.getElementById('response-content').value.trim();
+    const insights    = document.getElementById('response-insights').value.trim();
+    const emotion     = document.getElementById('response-emotion').value.trim();
+    const share       = document.getElementById('share-with-therapist').checked;
+    const btn         = document.getElementById('submit-response-btn');
+
+    if (!content) { showAlert('Please write your response before submitting.'); return; }
+
+    btn.disabled = true;
+    btn.textContent = 'Submitting...';
+
+    try {
+      const resp = await fetch(`/client/api/prompts/${promptId}/respond`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          response_content: content,
+          insights_gained: insights,
+          emotional_state: emotion,
+          share_with_therapist: share
+        })
+      });
+      const data = await resp.json();
+      closeResponseModal();
+
+      if (resp.ok) {
+        showAlert('Response submitted successfully! 🎉', 'success');
+        setTimeout(() => location.reload(), 1500);
+      } else {
+        showAlert(data.error || 'Failed to submit response.');
+      }
+    } catch (e) {
+      closeResponseModal();
+      showAlert('Network error. Please try again.');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Submit Response';
+    }
+  });
+
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+});
+</script>
 {% endblock %}

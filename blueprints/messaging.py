@@ -1,9 +1,15 @@
-from flask import Blueprint, request, jsonify, session, render_template, redirect
+from flask import Blueprint, request, jsonify, session, render_template, redirect, current_app
 from models import (db, Capsule, Message, MessageTag, MessageAttachment,
-                    ClientTherapistRelationship, Notification, ActivityLog)
+                    ClientTherapistRelationship, Notification, ActivityLog, User)
 from datetime import datetime, timedelta
+from services.sentiment_analyzer import analyzer
+from threading import Thread
+import logging
 
 messaging_bp = Blueprint('messaging', __name__)
+
+# Setup logging
+logger = logging.getLogger(__name__)
 
 
 def require_auth():
@@ -19,6 +25,87 @@ def require_auth():
         return wrapper
 
     return decorator
+
+
+def analyze_capsule_priority(capsule_id, app=None):
+    """
+    Background task to analyze capsule priority using Granite AI.
+    Runs asynchronously so it doesn't block the response.
+    app must be passed in explicitly to avoid context loss in daemon threads.
+    """
+    from app import create_app
+    if app is None:
+        app = create_app()
+
+    try:
+        with app.app_context():
+            capsule = Capsule.query.get(capsule_id)
+            if not capsule:
+                logger.error(f"Capsule {capsule_id} not found for analysis")
+                return
+
+            # Get all messages in capsule (client messages only for sentiment)
+            messages = Message.query.filter_by(capsule_id=capsule_id) \
+                .order_by(Message.created_at) \
+                .all()
+
+            if not messages:
+                logger.info(f"No messages in capsule {capsule_id}, skipping analysis")
+                return
+
+            # Extract message content (only client messages matter for priority)
+            # But include all for context
+            message_texts = [m.content for m in messages]
+
+            logger.info(f"Analyzing capsule {capsule_id} with {len(message_texts)} messages")
+
+            # Analyze using Granite AI
+            analysis = analyzer.analyze_capsule_messages(message_texts)
+
+            # Update capsule with analysis results
+            capsule.priority_level = analysis['priority_level']
+            capsule.priority_score = analysis['priority_score']
+            capsule.priority_analyzed_at = datetime.utcnow()
+            capsule.priority_reasons = {
+                'reasons': analysis['reasons'],
+                'risk_flags': analysis['risk_flags'],
+                'sentiment_summary': analysis['sentiment_summary']
+            }
+
+            db.session.commit()
+
+            logger.info(
+                f"Capsule {capsule_id} analyzed: priority={analysis['priority_level']}, score={analysis['priority_score']}")
+
+            # If CRITICAL, create immediate high-priority notification for therapist
+            if analysis['priority_level'] == 'CRITICAL':
+                notification = Notification(
+                    user_id=capsule.therapist_id,
+                    notification_type='crisis_alert',
+                    title='⚠️ CRITICAL: Client in distress',
+                    message=f'URGENT: Client shows signs of crisis in capsule "{capsule.title}". Priority score: {analysis["priority_score"]}',
+                    related_entity_type='capsule',
+                    related_entity_id=capsule_id
+                )
+                db.session.add(notification)
+                db.session.commit()
+                logger.warning(f"CRITICAL alert created for capsule {capsule_id}")
+
+            # If HIGH priority, create standard notification
+            elif analysis['priority_level'] == 'HIGH':
+                notification = Notification(
+                    user_id=capsule.therapist_id,
+                    notification_type='high_priority',
+                    title='⚠️ High Priority Capsule',
+                    message=f'High priority capsule requires attention: {capsule.title}',
+                    related_entity_type='capsule',
+                    related_entity_id=capsule_id
+                )
+                db.session.add(notification)
+                db.session.commit()
+
+    except Exception as e:
+        logger.error(f"Error analyzing capsule {capsule_id}: {str(e)}", exc_info=True)
 
 
 # ========================================
@@ -77,10 +164,28 @@ def create_capsule():
             relationship_id=relationship.relationship_id,
             title=data.get('title', f"Capsule - {datetime.utcnow().strftime('%Y-%m-%d')}"),
             user_tag=data.get('user_tag', 'general'),
-            status='open'
+            status='open',
+            priority_level='LOW',  # Default priority
+            priority_score=0.0
         )
         db.session.add(capsule)
         db.session.commit()
+
+        # If first message was provided, add it
+        first_message = data.get('first_message')
+        if first_message:
+            message = Message(
+                capsule_id=capsule.capsule_id,
+                sender_id=user_id,
+                content=first_message
+            )
+            db.session.add(message)
+            db.session.commit()
+
+            # Trigger analysis for the new capsule
+            thread = Thread(target=analyze_capsule_priority, args=(capsule.capsule_id, current_app._get_current_object()))
+            thread.daemon = True
+            thread.start()
 
         return jsonify({
             'message': 'Capsule created successfully',
@@ -91,36 +196,54 @@ def create_capsule():
 
     except Exception as e:
         db.session.rollback()
+        logger.error(f"Failed to create capsule: {str(e)}")
         return jsonify({'error': f'Failed to create capsule: {str(e)}'}), 500
 
 
 @messaging_bp.route('/capsules', methods=['GET'])
 @require_auth()
 def get_capsules():
-    """Get user's capsules"""
+    """Get user's capsules with priority sorting for therapists"""
     user_id = session['user_id']
     user_type = session['user_type']
 
     status = request.args.get('status')
+    sort_by_priority = request.args.get('sort_by_priority', 'false').lower() == 'true'
 
     if user_type == 'client':
         query = Capsule.query.filter_by(client_id=user_id)
     else:
         query = Capsule.query.filter_by(therapist_id=user_id)
+        sort_by_priority = True  # Therapists always see priority order
 
     if status:
         query = query.filter_by(status=status)
 
     capsules = query.order_by(Capsule.created_at.desc()).limit(50).all()
 
+    # For therapists, sort by priority if requested
+    if user_type == 'therapist' and sort_by_priority:
+        priority_order = {'CRITICAL': 0, 'HIGH': 1, 'MEDIUM': 2, 'LOW': 3}
+        capsules.sort(key=lambda c: priority_order.get(c.priority_level or 'LOW', 3))
+
+    # Build client name lookup (for therapist view)
+    client_ids = list({c.client_id for c in capsules})
+    client_map = {}
+    if client_ids:
+        clients = User.query.filter(User.user_id.in_(client_ids)).all()
+        client_map = {u.user_id: f"{u.first_name} {u.last_name}" for u in clients}
+
     return jsonify({
         'capsules': [{
             'capsule_id': c.capsule_id,
             'client_id': c.client_id,
+            'client_name': client_map.get(c.client_id, 'Unknown Client'),
             'therapist_id': c.therapist_id,
             'title': c.title,
             'user_tag': c.user_tag,
             'status': c.status,
+            'priority_level': c.priority_level or 'LOW',
+            'priority_score': float(c.priority_score) if c.priority_score else 0,
             'created_at': c.created_at.isoformat(),
             'sealed_at': c.sealed_at.isoformat() if c.sealed_at else None
         } for c in capsules]
@@ -130,7 +253,7 @@ def get_capsules():
 @messaging_bp.route('/capsules/<int:capsule_id>', methods=['GET'])
 @require_auth()
 def get_capsule(capsule_id):
-    """Get capsule with messages"""
+    """Get capsule with messages and priority info"""
     user_id = session['user_id']
 
     capsule = Capsule.query.get(capsule_id)
@@ -154,6 +277,10 @@ def get_capsule(capsule_id):
             'title': capsule.title,
             'user_tag': capsule.user_tag,
             'status': capsule.status,
+            'priority_level': capsule.priority_level or 'LOW',
+            'priority_score': float(capsule.priority_score) if capsule.priority_score else 0,
+            'priority_reasons': capsule.priority_reasons,
+            'priority_analyzed_at': capsule.priority_analyzed_at.isoformat() if capsule.priority_analyzed_at else None,
             'created_at': capsule.created_at.isoformat(),
             'sealed_at': capsule.sealed_at.isoformat() if capsule.sealed_at else None
         },
@@ -186,6 +313,11 @@ def seal_capsule(capsule_id):
     capsule.status = 'sealed'
     capsule.sealed_at = datetime.utcnow()
     db.session.commit()
+
+    # Perform final priority analysis when sealing
+    thread = Thread(target=analyze_capsule_priority, args=(capsule_id, current_app._get_current_object()))
+    thread.daemon = True
+    thread.start()
 
     # Notify therapist
     notification = Notification(
@@ -233,7 +365,7 @@ def archive_capsule(capsule_id):
 @messaging_bp.route('/capsules/<int:capsule_id>/messages', methods=['POST'])
 @require_auth()
 def create_message(capsule_id):
-    """Add a message to a capsule"""
+    """Add a message to a capsule and trigger priority analysis"""
     user_id = session['user_id']
     data = request.get_json()
 
@@ -274,6 +406,13 @@ def create_message(capsule_id):
         db.session.add(notification)
         db.session.commit()
 
+        # Trigger priority analysis in background (only for client messages)
+        if user_id == capsule.client_id:  # Only analyze when client sends message
+            thread = Thread(target=analyze_capsule_priority, args=(capsule_id, current_app._get_current_object()))
+            thread.daemon = True
+            thread.start()
+            logger.info(f"Priority analysis triggered for capsule {capsule_id}")
+
         return jsonify({
             'message': 'Message created successfully',
             'message_id': message.message_id,
@@ -282,6 +421,7 @@ def create_message(capsule_id):
 
     except Exception as e:
         db.session.rollback()
+        logger.error(f"Failed to create message: {str(e)}")
         return jsonify({'error': f'Failed to create message: {str(e)}'}), 500
 
 
@@ -320,6 +460,196 @@ def add_message_tag(message_id):
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': f'Failed to add tag: {str(e)}'}), 500
+
+
+# ========================================
+# THERAPIST PRIORITY ENDPOINTS
+# ========================================
+
+@messaging_bp.route('/therapist/prioritized', methods=['GET'])
+@require_auth()
+def therapist_prioritized_view():
+    """Render therapist prioritized capsules dashboard"""
+    if session.get('user_type') != 'therapist':
+        return redirect('/dashboard')
+    return render_template('therapist/prioritized_capsules.html')
+
+
+@messaging_bp.route('/api/therapist/prioritized-capsules', methods=['GET'])
+@require_auth()
+def get_prioritized_capsules():
+    """API endpoint for therapist to get capsules sorted by priority"""
+    user_id = session['user_id']
+
+    if session.get('user_type') != 'therapist':
+        return jsonify({'error': 'Access denied'}), 403
+
+    # Priority order for sorting
+    priority_order = {'CRITICAL': 0, 'HIGH': 1, 'MEDIUM': 2, 'LOW': 3}
+
+    # Get all sealed and archived capsules for this therapist
+    capsules = (
+        Capsule.query
+        .filter_by(therapist_id=user_id)
+        .filter(Capsule.status.in_(['sealed', 'archived']))
+        .all()
+    )
+
+    # Filter out capsules without messages (shouldn't happen but just in case)
+    valid_capsules = []
+    for capsule in capsules:
+        message_count = Message.query.filter_by(capsule_id=capsule.capsule_id).count()
+        if message_count > 0:
+            valid_capsules.append(capsule)
+
+    # Sort by priority (critical first)
+    valid_capsules.sort(key=lambda c: priority_order.get(c.priority_level or 'LOW', 3))
+
+    # Get client names
+    client_ids = list({c.client_id for c in valid_capsules})
+    clients = User.query.filter(User.user_id.in_(client_ids)).all()
+    client_map = {u.user_id: f"{u.first_name} {u.last_name}" for u in clients}
+
+    # Build response with additional data
+    result = []
+    for capsule in valid_capsules:
+        # Count messages
+        message_count = Message.query.filter_by(capsule_id=capsule.capsule_id).count()
+
+        # Get last message
+        last_message = (
+            Message.query
+            .filter_by(capsule_id=capsule.capsule_id)
+            .order_by(Message.created_at.desc())
+            .first()
+        )
+
+        # Get first message (for preview)
+        first_message = (
+            Message.query
+            .filter_by(capsule_id=capsule.capsule_id)
+            .order_by(Message.created_at.asc())
+            .first()
+        )
+
+        result.append({
+            'capsule_id': capsule.capsule_id,
+            'title': capsule.title,
+            'client_name': client_map.get(capsule.client_id, 'Unknown'),
+            'priority_level': capsule.priority_level or 'LOW',
+            'priority_score': float(capsule.priority_score) if capsule.priority_score else 0,
+            'priority_reasons': capsule.priority_reasons,
+            'priority_analyzed_at': capsule.priority_analyzed_at.isoformat() if capsule.priority_analyzed_at else None,
+            'message_count': message_count,
+            'first_message_preview': first_message.content[:100] + '...' if first_message and len(
+                first_message.content) > 100 else (first_message.content if first_message else ''),
+            'last_message_at': last_message.created_at.isoformat() if last_message else None,
+            'status': capsule.status,
+            'sealed_at': capsule.sealed_at.isoformat() if capsule.sealed_at else None
+        })
+
+    return jsonify({'capsules': result}), 200
+
+
+@messaging_bp.route('/api/therapist/capsules/<int:capsule_id>/reanalyze', methods=['POST'])
+@require_auth()
+def reanalyze_capsule(capsule_id):
+    """
+    Manually re-run Granite analysis on a capsule.
+    Runs synchronously so the UI gets the result immediately.
+    Only the assigned therapist can trigger this.
+    """
+    user_id = session['user_id']
+
+    if session.get('user_type') != 'therapist':
+        return jsonify({'error': 'Access denied'}), 403
+
+    capsule = Capsule.query.get(capsule_id)
+    if not capsule or capsule.therapist_id != user_id:
+        return jsonify({'error': 'Capsule not found'}), 404
+
+    messages = Message.query.filter_by(capsule_id=capsule_id)\
+        .order_by(Message.created_at).all()
+
+    if not messages:
+        return jsonify({'error': 'No messages in this capsule to analyze'}), 400
+
+    try:
+        message_texts = [m.content for m in messages]
+        analysis = analyzer.analyze_capsule_messages(message_texts)
+
+        # Overwrite whatever was stored before
+        capsule.priority_level       = analysis['priority_level']
+        capsule.priority_score       = analysis['priority_score']
+        capsule.priority_analyzed_at = datetime.utcnow()
+        capsule.priority_reasons     = {
+            'reasons':          analysis['reasons'],
+            'risk_flags':       analysis['risk_flags'],
+            'sentiment_summary': analysis['sentiment_summary']
+        }
+        db.session.commit()
+
+        # Re-issue notifications if the new result is critical
+        if analysis['priority_level'] == 'CRITICAL':
+            notification = Notification(
+                user_id=capsule.therapist_id,
+                notification_type='crisis_alert',
+                title='⚠️ CRITICAL: Client in distress (reanalysis)',
+                message=f'Reanalysis flagged a crisis in capsule "{capsule.title}". Score: {analysis["priority_score"]:.2f}',
+                related_entity_type='capsule',
+                related_entity_id=capsule_id
+            )
+            db.session.add(notification)
+            db.session.commit()
+            logger.warning(f"CRITICAL re-flagged on reanalysis for capsule {capsule_id}")
+
+        elif analysis['priority_level'] == 'HIGH':
+            notification = Notification(
+                user_id=capsule.therapist_id,
+                notification_type='high_priority',
+                title='⚠️ High Priority Capsule (reanalysis)',
+                message=f'Reanalysis: high priority capsule needs attention — {capsule.title}',
+                related_entity_type='capsule',
+                related_entity_id=capsule_id
+            )
+            db.session.add(notification)
+            db.session.commit()
+
+        logger.info(f"Capsule {capsule_id} reanalyzed: {analysis['priority_level']} ({analysis['priority_score']:.2f})")
+
+        return jsonify({
+            'message': 'Reanalysis complete',
+            'analysis': {
+                'priority_level': analysis['priority_level'],
+                'priority_score': analysis['priority_score'],
+                'reasons':        analysis['reasons'],
+                'risk_flags':     analysis['risk_flags'],
+                'sentiment_summary': analysis['sentiment_summary'],
+                'analyzed_at':    capsule.priority_analyzed_at.isoformat()
+            }
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Reanalysis failed for capsule {capsule_id}: {str(e)}", exc_info=True)
+        return jsonify({'error': 'Analysis failed. Is Ollama running?'}), 500
+
+@messaging_bp.route('/api/therapist/capsules/<int:capsule_id>/mark-reviewed', methods=['POST'])
+@require_auth()
+def mark_capsule_reviewed(capsule_id):
+    """Mark a capsule as reviewed by therapist"""
+    user_id = session['user_id']
+
+    if session.get('user_type') != 'therapist':
+        return jsonify({'error': 'Access denied'}), 403
+
+    capsule = Capsule.query.get(capsule_id)
+    if not capsule or capsule.therapist_id != user_id:
+        return jsonify({'error': 'Capsule not found'}), 404
+
+    capsule.priority_reviewed_by_therapist = True
+    db.session.commit()
+
+    return jsonify({'message': 'Capsule marked as reviewed'}), 200
 
 
 # ========================================
@@ -390,3 +720,18 @@ def mark_all_read():
     db.session.commit()
 
     return jsonify({'message': 'All notifications marked as read'}), 200
+
+# ========================================
+# DIAGNOSTIC (remove in production)
+# ========================================
+
+@messaging_bp.route('/api/analyze-test', methods=['GET'])
+def analyze_test():
+    """Test Ollama connectivity and run a sample analysis. Remove before production."""
+    try:
+        result = analyzer.analyze_capsule_messages([
+            "I had a rough episode of suicidal thoughts the other day"
+        ])
+        return jsonify({'ollama_reachable': True, 'result': result}), 200
+    except Exception as e:
+        return jsonify({'ollama_reachable': False, 'error': str(e)}), 500

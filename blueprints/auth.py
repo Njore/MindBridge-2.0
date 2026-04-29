@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify, session, render_template, redirect
-from models import db, User, ConsentAgreement, UserPrivacySetting, ActivityLog
+from models import db, User, ConsentAgreement, UserPrivacySetting, ActivityLog, DataErasureRequest
 from datetime import datetime
 import bcrypt
 import re
@@ -235,9 +235,13 @@ def login():
     # Redirect based on user type
     if user.user_type == 'client':
         return redirect('/client/dashboard')
-    else:
+    elif user.user_type == 'therapist':
         return redirect('/therapist/dashboard')
-
+    elif user.user_type == 'admin':
+        return redirect('/admin/dashboard')
+    else:
+        session.clear()
+        return render_template('auth/login.html', error='Unknown account type'), 403
 
 @auth_bp.route('/logout', methods=['POST'])
 def logout():
@@ -334,4 +338,90 @@ def get_current_user():
         'bio': user.bio,
         'is_verified': user.is_verified,
         'created_at': user.created_at.isoformat()
+    }), 200
+
+# ========================================
+# GDPR — USER ERASURE REQUEST
+# Add these routes to auth.py
+# Also add DataErasureRequest to the import line at the top of auth.py:
+#   from models import db, User, ConsentAgreement, UserPrivacySetting, ActivityLog, DataErasureRequest
+# ========================================
+
+@auth_bp.route('/account/request-erasure', methods=['POST'])
+def request_erasure():
+    """
+    Submit a right-to-erasure request (GDPR Article 17).
+    The request is queued for admin review — not instant.
+    Users are told upfront that clinical records may be retained
+    by law regardless of the outcome.
+    """
+    if 'user_id' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    user_id = session['user_id']
+
+    # Block duplicate pending requests
+    existing = DataErasureRequest.query.filter_by(
+        user_id=user_id,
+        status='pending'
+    ).first()
+    if existing:
+        return jsonify({
+            'error': 'You already have a pending erasure request',
+            'submitted_at': existing.requested_at.isoformat()
+        }), 409
+
+    data = request.get_json() or {}
+    reason = data.get('reason', '').strip() or None  # Optional
+
+    erasure_req = DataErasureRequest(
+        user_id=user_id,
+        reason=reason,
+        status='pending'
+    )
+    db.session.add(erasure_req)
+
+    log_activity(
+        user_id,
+        'erasure_request_submitted',
+        'User submitted a data erasure request'
+    )
+
+    db.session.commit()
+
+    return jsonify({
+        'message': (
+            'Your erasure request has been submitted and will be reviewed '
+            'by our team within 30 days. Note: clinical records may be retained '
+            'as required by applicable law even after erasure is approved.'
+        ),
+        'request_id': erasure_req.request_id,
+        'submitted_at': erasure_req.requested_at.isoformat()
+    }), 201
+
+
+@auth_bp.route('/account/erasure-status', methods=['GET'])
+def get_erasure_status():
+    """
+    Let a user check the status of their erasure request.
+    """
+    if 'user_id' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    req = DataErasureRequest.query.filter_by(
+        user_id=session['user_id']
+    ).order_by(DataErasureRequest.requested_at.desc()).first()
+
+    if not req:
+        return jsonify({'request': None}), 200
+
+    return jsonify({
+        'request': {
+            'request_id':   req.request_id,
+            'status':       req.status,
+            'submitted_at': req.requested_at.isoformat(),
+            'reviewed_at':  req.reviewed_at.isoformat() if req.reviewed_at else None,
+            'notes':        req.notes if req.status in ('rejected',) else None,
+            # Don't expose admin notes on approved/completed — nothing useful to show
+        }
     }), 200

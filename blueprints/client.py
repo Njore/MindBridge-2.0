@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify, session, send_file, render_template, redirect
 from models import (db, User, PrivatePocket, ConsentAgreement, UserPrivacySetting,
-                    ActivityLog, Capsule, Message, CrisisEvent, PromptResponse)
+                    ActivityLog, Capsule, Message, CrisisEvent, PromptResponse,
+                    TherapeuticPrompt, ClientTherapistRelationship, Notification)
 from datetime import datetime, date, timedelta
 from cryptography.fernet import Fernet
 import os
@@ -76,6 +77,14 @@ def prompts():
     return render_template('client/prompts.html')
 
 
+@client_bp.route('/create-capsule', methods=['GET'])
+def create_capsule_page():
+    """Show create capsule page"""
+    if 'user_id' not in session:
+        return redirect('/auth/login')
+    return render_template('messaging/create_capsule.html')
+
+
 # ========================================
 # PRIVATE POCKETS (7 Pockets)
 # ========================================
@@ -114,11 +123,9 @@ def create_pocket():
         encrypted_content = encrypt_content(content)
 
         if existing:
-            # Update existing pocket
             existing.content = encrypted_content
             existing.updated_at = datetime.utcnow()
         else:
-            # Create new pocket
             pocket = PrivatePocket(
                 client_id=user_id,
                 date=pocket_date,
@@ -171,7 +178,6 @@ def get_week_pockets():
     """Get all pockets for the current week"""
     user_id = session['user_id']
 
-    # Get start and end of current week
     today = date.today()
     start_of_week = today - timedelta(days=today.weekday())
     end_of_week = start_of_week + timedelta(days=6)
@@ -213,15 +219,12 @@ def export_pockets_pdf():
     user_id = session['user_id']
     data = request.get_json()
 
-    # Date range for export
     start_date = data.get('start_date')
     end_date = data.get('end_date', date.today().isoformat())
 
     if not start_date:
-        # Default to last 30 days
         start_date = (date.today() - timedelta(days=30)).isoformat()
 
-    # Query pockets
     pockets = PrivatePocket.query.filter(
         PrivatePocket.client_id == user_id,
         PrivatePocket.date >= start_date,
@@ -231,16 +234,13 @@ def export_pockets_pdf():
     if not pockets:
         return jsonify({'error': 'No data found for the specified date range'}), 404
 
-    # Get user info
     user = User.query.get(user_id)
 
-    # Create PDF in memory (not stored on server - PRD 1.3)
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter)
     story = []
     styles = getSampleStyleSheet()
 
-    # Custom styles
     title_style = ParagraphStyle(
         'CustomTitle',
         parent=styles['Heading1'],
@@ -255,14 +255,12 @@ def export_pockets_pdf():
         spaceAfter=10
     )
 
-    # Title
     story.append(Paragraph("MindBridge - 7 Pockets Export", title_style))
     story.append(Paragraph(f"User: {user.first_name} {user.last_name}", styles['Normal']))
     story.append(Paragraph(f"Export Date: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}", styles['Normal']))
     story.append(Paragraph(f"Period: {start_date} to {end_date}", styles['Normal']))
     story.append(Spacer(1, 0.5 * inch))
 
-    # Group by date
     current_date = None
     for pocket in pockets:
         if current_date != pocket.date:
@@ -271,17 +269,14 @@ def export_pockets_pdf():
             current_date = pocket.date
             story.append(Paragraph(f"Date: {pocket.date.strftime('%A, %B %d, %Y')}", date_style))
 
-        # Decrypt and add content
         content = decrypt_content(pocket.content)
         story.append(Paragraph(f"<b>Pocket {pocket.pocket_number}:</b>", styles['Normal']))
         story.append(Paragraph(content, styles['BodyText']))
         story.append(Spacer(1, 0.2 * inch))
 
-    # Build PDF
     doc.build(story)
     buffer.seek(0)
 
-    # Log export activity (PRD 1.3 - audit logging)
     log = ActivityLog(
         user_id=user_id,
         action_type='data_export',
@@ -293,7 +288,6 @@ def export_pockets_pdf():
     db.session.add(log)
     db.session.commit()
 
-    # Return PDF (not stored on server)
     return send_file(
         buffer,
         mimetype='application/pdf',
@@ -313,26 +307,21 @@ def delete_account():
     """
     Delete user account and all associated data
     PRD 1.4: Account Deletion (Right to Erasure)
-    - Permanent removal within retention window
-    - All associated data deleted
     """
     user_id = session['user_id']
     data = request.get_json()
 
-    # Require password confirmation
     if not data.get('password'):
         return jsonify({'error': 'Password confirmation required'}), 400
 
     user = User.query.get(user_id)
 
-    # Import from auth blueprint
     from blueprints.auth import verify_password
 
     if not verify_password(data['password'], user.password_hash):
         return jsonify({'error': 'Invalid password'}), 401
 
     try:
-        # Log deletion before deleting user
         log = ActivityLog(
             user_id=user_id,
             action_type='account_deletion',
@@ -343,11 +332,9 @@ def delete_account():
         db.session.add(log)
         db.session.commit()
 
-        # Delete user (CASCADE will handle related data)
         db.session.delete(user)
         db.session.commit()
 
-        # Clear session
         session.clear()
 
         return jsonify({
@@ -389,10 +376,7 @@ def get_privacy_settings():
 @client_bp.route('/privacy/settings', methods=['PUT'])
 @require_client()
 def update_privacy_settings():
-    """
-    Update privacy settings
-    PRD 2.3: Data Minimization
-    """
+    """Update privacy settings — PRD 2.3: Data Minimization"""
     user_id = session['user_id']
     data = request.get_json()
 
@@ -401,7 +385,6 @@ def update_privacy_settings():
     if not settings:
         return jsonify({'error': 'Privacy settings not found'}), 404
 
-    # Update allowed fields
     if 'allow_data_analytics' in data:
         settings.allow_data_analytics = data['allow_data_analytics']
     if 'allow_session_recordings' in data:
@@ -409,16 +392,14 @@ def update_privacy_settings():
     if 'share_progress_with_therapist' in data:
         settings.share_progress_with_therapist = data['share_progress_with_therapist']
     if 'data_retention_days' in data:
-        # Validate retention period
         retention = data['data_retention_days']
-        if retention < 30 or retention > 3650:  # 30 days to 10 years
+        if retention < 30 or retention > 3650:
             return jsonify({'error': 'Retention days must be between 30 and 3650'}), 400
         settings.data_retention_days = retention
 
     settings.last_updated = datetime.utcnow()
     db.session.commit()
 
-    # Log privacy update
     log = ActivityLog(
         user_id=user_id,
         action_type='privacy_update',
@@ -432,28 +413,25 @@ def update_privacy_settings():
 
 
 # ========================================
-# DASHBOARD / PROFILE
+# DASHBOARD API
 # ========================================
 
-@client_bp.route('/dashboard', methods=['GET'])
+@client_bp.route('/api/dashboard', methods=['GET'])
 @require_client()
 def get_dashboard():
-    """Get client dashboard overview"""
+    """Get client dashboard overview stats"""
     user_id = session['user_id']
 
-    # Recent pockets count
     recent_pockets = PrivatePocket.query.filter(
         PrivatePocket.client_id == user_id,
         PrivatePocket.date >= date.today() - timedelta(days=7)
     ).count()
 
-    # Recent capsules count
     recent_capsules = Capsule.query.filter(
         Capsule.client_id == user_id,
         Capsule.created_at >= datetime.utcnow() - timedelta(days=7)
     ).count()
 
-    # Crisis events count (last 30 days)
     crisis_count = CrisisEvent.query.filter(
         CrisisEvent.client_id == user_id,
         CrisisEvent.created_at >= datetime.utcnow() - timedelta(days=30)
@@ -464,3 +442,140 @@ def get_dashboard():
         'recent_capsules': recent_capsules,
         'crisis_events_30d': crisis_count
     }), 200
+
+
+# ========================================
+# THERAPIST CONNECTION
+# ========================================
+
+@client_bp.route('/api/my-therapist', methods=['GET'])
+@require_client()
+def get_my_therapist():
+    """Get the client's connected therapist and relationship details"""
+    user_id = session['user_id']
+
+    relationship = ClientTherapistRelationship.query.filter_by(
+        client_id=user_id,
+        status='active'
+    ).first()
+
+    if not relationship:
+        return jsonify({'therapist': None}), 200
+
+    therapist = User.query.get(relationship.therapist_id)
+
+    return jsonify({
+        'therapist': {
+            'user_id':    therapist.user_id,
+            'first_name': therapist.first_name,
+            'last_name':  therapist.last_name,
+            'email':      therapist.email,
+            'bio':        therapist.bio,
+        },
+        'relationship': {
+            'relationship_id':         relationship.relationship_id,
+            'relationship_start_date': relationship.relationship_start_date.isoformat(),
+            'client_goals':            relationship.client_goals,
+        }
+    }), 200
+
+
+# ========================================
+# THERAPEUTIC PROMPTS
+# ========================================
+
+@client_bp.route('/api/prompts', methods=['GET'])
+@require_client()
+def get_my_prompts():
+    """Get all active prompts assigned to this client by their therapist"""
+    user_id = session['user_id']
+
+    relationship = ClientTherapistRelationship.query.filter_by(
+        client_id=user_id,
+        status='active'
+    ).first()
+
+    if not relationship:
+        return jsonify({'prompts': []}), 200
+
+    prompts = TherapeuticPrompt.query.filter_by(
+        relationship_id=relationship.relationship_id,
+        is_active=True
+    ).order_by(TherapeuticPrompt.created_at.desc()).all()
+
+    # Find which prompts the client has already responded to
+    responded_ids = {
+        r.prompt_id for r in PromptResponse.query.filter_by(client_id=user_id).all()
+    }
+
+    return jsonify({
+        'prompts': [{
+            'prompt_id':                 p.prompt_id,
+            'prompt_type':               p.prompt_type,
+            'title':                     p.title,
+            'description':               p.description,
+            'prompt_content':            p.prompt_content,
+            'instructions':              p.instructions,
+            'expected_duration_minutes': p.expected_duration_minutes,
+            'created_at':                p.created_at.isoformat(),
+            'already_responded':         p.prompt_id in responded_ids,
+        } for p in prompts]
+    }), 200
+
+
+@client_bp.route('/api/prompts/<int:prompt_id>/respond', methods=['POST'])
+@require_client()
+def respond_to_prompt(prompt_id):
+    """Submit a response to a therapeutic prompt"""
+    user_id = session['user_id']
+    data = request.get_json()
+
+    relationship = ClientTherapistRelationship.query.filter_by(
+        client_id=user_id,
+        status='active'
+    ).first()
+
+    if not relationship:
+        return jsonify({'error': 'No active therapist relationship'}), 404
+
+    prompt = TherapeuticPrompt.query.filter_by(
+        prompt_id=prompt_id,
+        relationship_id=relationship.relationship_id
+    ).first()
+
+    if not prompt:
+        return jsonify({'error': 'Prompt not found'}), 404
+
+    if not data.get('response_content'):
+        return jsonify({'error': 'response_content is required'}), 400
+
+    try:
+        response = PromptResponse(
+            prompt_id=prompt_id,
+            client_id=user_id,
+            relationship_id=relationship.relationship_id,
+            response_content=data['response_content'],
+            insights_gained=data.get('insights_gained', ''),
+            emotional_state=data.get('emotional_state', ''),
+            response_date=date.today(),
+            is_shared_with_therapist=data.get('share_with_therapist', True)
+        )
+        db.session.add(response)
+
+        # Notify therapist
+        notification = Notification(
+            user_id=relationship.therapist_id,
+            notification_type='prompt_response',
+            title='Client Responded to Prompt',
+            message=f'Your client responded to: {prompt.title}',
+            related_entity_type='prompt',
+            related_entity_id=prompt_id
+        )
+        db.session.add(notification)
+        db.session.commit()
+
+        return jsonify({'message': 'Response submitted successfully'}), 201
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Failed to submit response: {str(e)}'}), 500

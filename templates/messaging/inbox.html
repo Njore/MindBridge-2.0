@@ -4,76 +4,167 @@
 
 {% block extra_css %}
 <style>
-    .capsule-item {
-        background: white;
-        border: 2px solid var(--border);
-        border-radius: 12px;
-        padding: 1.5rem;
-        margin-bottom: 1rem;
-        transition: all 0.3s;
-        cursor: pointer;
-    }
-
-    .capsule-item:hover {
-        border-color: var(--primary);
-        box-shadow: 0 4px 12px var(--shadow);
-    }
-
-    .status-badge {
-        display: inline-block;
-        padding: 0.25rem 0.75rem;
-        border-radius: 20px;
-        font-size: 0.85rem;
-        font-weight: 600;
-    }
-
-    .status-open {
-        background: rgba(123, 165, 145, 0.2);
-        color: var(--success);
-    }
-
-    .status-sealed {
-        background: rgba(139, 123, 139, 0.2);
-        color: var(--primary);
-    }
+  .capsule-item {
+    border: 2px solid var(--border);
+    border-radius: 12px;
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 1rem;
+    cursor: pointer;
+    transition: all 0.3s;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+  }
+  .capsule-item:hover { border-color: var(--primary); box-shadow: 0 4px 12px var(--shadow); }
+  .status-badge { display:inline-block;padding:0.25rem 0.75rem;border-radius:20px;font-size:0.8rem;font-weight:600; }
+  .status-open { background:rgba(123,165,145,0.2);color:var(--success); }
+  .status-sealed { background:rgba(139,123,139,0.2);color:var(--primary); }
+  .status-archived { background:rgba(107,107,107,0.15);color:var(--text-muted); }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="container">
-    <div class="card">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
-            <div>
-                <h1>💌 My Capsules</h1>
-                <p style="color: var(--text-muted);">24-hour communication windows with your therapist</p>
-            </div>
-            {% if session.user_type == 'client' %}
-            <a href="/messaging/create-capsule" class="btn btn-primary">➕ New Capsule</a>
-            {% endif %}
-        </div>
-
-        <div style="text-align: center; padding: 3rem; color: var(--text-muted);">
-            <div style="font-size: 4rem; margin-bottom: 1rem;">📭</div>
-            <h3>No capsules yet</h3>
-            <p>Create your first capsule to start communicating with your therapist</p>
-            {% if session.user_type == 'client' %}
-            <a href="/messaging/create-capsule" class="btn btn-primary" style="margin-top: 1rem;">Create Capsule</a>
-            {% endif %}
-        </div>
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;flex-wrap:wrap;gap:1rem;">
+      <div>
+        <h1>💌 My Capsules</h1>
+        <p style="color:var(--text-muted);">24-hour communication windows with your therapist</p>
+      </div>
+      {% if session.user_type == 'client' %}
+      <a href="/client/create-capsule" class="btn btn-primary">➕ New Capsule</a>
+      {% endif %}
     </div>
 
-    <div class="card">
-        <h3>About Capsules</h3>
-        <div class="grid grid-2" style="margin-top: 1rem;">
-            <div>
-                <h4>📝 Open Capsules</h4>
-                <p style="color: var(--text-muted);">Add messages for 24 hours. Once sealed, your therapist can read and respond.</p>
-            </div>
-            <div>
-                <h4>🔒 Sealed Capsules</h4>
-                <p style="color: var(--text-muted);">Locked for editing. Your therapist can now provide feedback.</p>
-            </div>
-        </div>
+    <!-- Filter tabs -->
+    <div style="display:flex;gap:0.5rem;margin-bottom:1.5rem;flex-wrap:wrap;">
+      <button class="btn btn-primary filter-btn" data-status="">All</button>
+      <button class="btn btn-outline filter-btn" data-status="open">Open</button>
+      <button class="btn btn-outline filter-btn" data-status="sealed">Sealed</button>
+      <button class="btn btn-outline filter-btn" data-status="archived">Archived</button>
     </div>
+
+    <div id="alert-area"></div>
+    <div id="capsules-container">
+      <p style="text-align:center;padding:3rem;color:var(--text-muted);">Loading capsules...</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>About Capsules</h3>
+    <div class="grid grid-2" style="margin-top:1rem;">
+      <div>
+        <h4>📝 Open Capsules</h4>
+        <p style="color:var(--text-muted);">Add messages for 24 hours. Once sealed, your therapist can read and respond.</p>
+      </div>
+      <div>
+        <h4>🔒 Sealed Capsules</h4>
+        <p style="color:var(--text-muted);">Locked for editing. Your therapist can now provide feedback.</p>
+      </div>
+    </div>
+  </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+
+  const userType = "{{ session.user_type }}";
+  let currentStatus = '';
+
+  // Priority config for therapist view
+  const priorityMeta = {
+    CRITICAL: { color: '#dc2626', bg: '#fee2e2', icon: '🚨' },
+    HIGH:     { color: '#f59e0b', bg: '#fed7aa', icon: '⚠️' },
+    MEDIUM:   { color: '#eab308', bg: '#fef9c3', icon: '🔶' },
+    LOW:      { color: 'var(--success)', bg: 'rgba(123,165,145,0.1)', icon: '✅' }
+  };
+
+  async function loadCapsules(status = '') {
+    const container = document.getElementById('capsules-container');
+    container.innerHTML = `<p style="text-align:center;padding:2rem;color:var(--text-muted);">Loading...</p>`;
+
+    try {
+      // Therapists always get priority-sorted results
+      const params = new URLSearchParams();
+      if (status) params.set('status', status);
+      if (userType === 'therapist') params.set('sort_by_priority', 'true');
+      const url = '/messaging/capsules' + (params.toString() ? '?' + params.toString() : '');
+
+      const resp = await fetch(url);
+      const data = await resp.json();
+
+      if (!resp.ok) { container.innerHTML = `<p style="color:var(--danger);text-align:center;padding:2rem;">${data.error}</p>`; return; }
+
+      if (data.capsules.length === 0) {
+        container.innerHTML = `
+          <div style="text-align:center;padding:3rem;color:var(--text-muted);">
+            <div style="font-size:4rem;margin-bottom:1rem;">📭</div>
+            <h3>No capsules yet</h3>
+            <p>Create your first capsule to start communicating with your therapist.</p>
+            ${ '{{ session.user_type }}' === 'client' ? '<a href="/client/create-capsule" class="btn btn-primary" style="margin-top:1rem;">Create Capsule</a>' : '' }
+          </div>`;
+        return;
+      }
+
+      container.innerHTML = data.capsules.map(c => {
+        const pm = priorityMeta[c.priority_level] || priorityMeta.LOW;
+
+        // Therapist view: priority-first card with coloured left border
+        const therapistPriorityStyle = userType === 'therapist'
+          ? `border-left: 5px solid ${pm.color};`
+          : '';
+        const priorityBadge = userType === 'therapist'
+          ? `<span style="background:${pm.bg};color:${pm.color};padding:0.2rem 0.6rem;border-radius:20px;font-size:0.78rem;font-weight:700;">${pm.icon} ${c.priority_level}</span>`
+          : '';
+
+        return `
+          <div class="capsule-item" style="${therapistPriorityStyle}" onclick="window.location='/messaging/conversation/${c.capsule_id}'">
+            <div style="flex:1;">
+              <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.25rem;flex-wrap:wrap;">
+                <strong>${escapeHtml(c.title)}</strong>
+                <span class="status-badge status-${c.status}">${c.status.toUpperCase()}</span>
+                <span style="background:var(--bg-light);padding:0.2rem 0.5rem;border-radius:8px;font-size:0.8rem;">${c.user_tag}</span>
+                ${priorityBadge}
+              </div>
+              <div style="color:var(--text-muted);font-size:0.85rem;">
+                ${userType === 'therapist' ? `<span style="font-weight:500;color:var(--text-dark);">👤 ${escapeHtml(c.client_name || 'Unknown')}</span> &middot; ` : ''}
+                Created ${formatDate(c.created_at)}
+                ${c.sealed_at ? ` · Sealed ${formatDate(c.sealed_at)}` : ''}
+              </div>
+            </div>
+            <div style="color:var(--primary);font-size:1.2rem;">→</div>
+          </div>`;
+      }).join('');
+
+    } catch (e) {
+      container.innerHTML = `<p style="color:var(--danger);text-align:center;padding:2rem;">Failed to load capsules.</p>`;
+    }
+  }
+
+  // Filter buttons
+  document.querySelectorAll('.filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.filter-btn').forEach(b => {
+        b.className = 'btn btn-outline filter-btn';
+      });
+      btn.className = 'btn btn-primary filter-btn';
+      currentStatus = btn.dataset.status;
+      loadCapsules(currentStatus);
+    });
+  });
+
+  function escapeHtml(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function formatDate(str) {
+    return new Date(str).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' });
+  }
+
+  loadCapsules();
+});
+</script>
 {% endblock %}

@@ -3,55 +3,159 @@
 {% block title %}Create Prompt - MindBridge{% endblock %}
 
 {% block content %}
-<div class="container" style="max-width: 800px;">
-    <div class="card">
-        <div class="card-header">
-            <h2>Create Therapeutic Prompt</h2>
-            <p style="color: var(--text-muted);">Create an exercise or reflection for your client</p>
-        </div>
-
-        <form action="/therapist/prompts" method="POST">
-            <div class="form-group">
-                <label for="client_id">Select Client *</label>
-                <select id="client_id" name="client_id" class="form-control" required>
-                    <option value="">Choose a client</option>
-                </select>
-            </div>
-
-            <div class="form-group">
-                <label for="prompt_type">Prompt Type *</label>
-                <select id="prompt_type" name="prompt_type" class="form-control" required>
-                    <option value="">Select type</option>
-                    <option value="grounding">Grounding</option>
-                    <option value="reflection">Reflection</option>
-                    <option value="cbt">CBT Exercise</option>
-                    <option value="mindfulness">Mindfulness</option>
-                    <option value="journaling">Journaling</option>
-                </select>
-            </div>
-
-            <div class="form-group">
-                <label for="title">Title *</label>
-                <input type="text" id="title" name="title" class="form-control" required>
-            </div>
-
-            <div class="form-group">
-                <label for="description">Description *</label>
-                <textarea id="description" name="description" class="form-control" rows="3" required></textarea>
-            </div>
-
-            <div class="form-group">
-                <label for="prompt_content">Prompt Content *</label>
-                <textarea id="prompt_content" name="prompt_content" class="form-control" rows="5" required></textarea>
-            </div>
-
-            <div class="form-group">
-                <label for="instructions">Instructions (Optional)</label>
-                <textarea id="instructions" name="instructions" class="form-control" rows="3"></textarea>
-            </div>
-
-            <button type="submit" class="btn btn-primary" style="width: 100%; padding: 1rem;">Create Prompt</button>
-        </form>
+<div class="container" style="max-width:800px;">
+  <div class="card">
+    <div class="card-header">
+      <h2>Create Therapeutic Prompt</h2>
+      <p style="color:var(--text-muted);">Create an exercise or reflection for your client</p>
     </div>
+
+    <div id="alert-area"></div>
+
+    <div class="form-group">
+      <label for="client_id">Select Client *</label>
+      <select id="client_id" name="client_id" class="form-control" required>
+        <option value="">Loading clients...</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="prompt_type">Prompt Type *</label>
+      <select id="prompt_type" class="form-control" required>
+        <option value="">Select type</option>
+        <option value="grounding">Grounding</option>
+        <option value="reflection">Reflection</option>
+        <option value="cbt">CBT Exercise</option>
+        <option value="mindfulness">Mindfulness</option>
+        <option value="journaling">Journaling</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="title">Title *</label>
+      <input type="text" id="title" class="form-control" required>
+    </div>
+
+    <div class="form-group">
+      <label for="description">Description *</label>
+      <textarea id="description" class="form-control" rows="3" required></textarea>
+    </div>
+
+    <div class="form-group">
+      <label for="prompt_content">Prompt Content *</label>
+      <textarea id="prompt_content" class="form-control" rows="5" required></textarea>
+    </div>
+
+    <div class="form-group">
+      <label for="instructions">Instructions (Optional)</label>
+      <textarea id="instructions" class="form-control" rows="3"></textarea>
+    </div>
+
+    <button id="submit-btn" class="btn btn-primary" style="width:100%;padding:1rem;">
+      Create Prompt
+    </button>
+  </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', async () => {
+
+  const clientSelect = document.getElementById('client_id');
+  const alertArea    = document.getElementById('alert-area');
+
+  function showAlert(message, type = 'danger') {
+    alertArea.innerHTML = `
+      <div class="alert alert-${type}" style="margin-bottom:1rem;">
+        ${message}
+        <button onclick="this.parentElement.remove()" style="float:right;background:none;border:none;cursor:pointer;font-size:1.2rem;">&times;</button>
+      </div>`;
+  }
+
+  // ── Populate client dropdown ──────────────────────────────────────────────
+  try {
+    const resp = await fetch('/therapist/api/clients');
+    const data = await resp.json();
+
+    if (!resp.ok || data.clients.length === 0) {
+      clientSelect.innerHTML = '<option value="">No active clients — add one first</option>';
+      clientSelect.disabled = true;
+      return;
+    }
+
+    // Store relationship_id on each option (the prompt API needs relationship_id)
+    clientSelect.innerHTML = '<option value="">Choose a client</option>' +
+      data.clients.map(c =>
+        `<option value="${c.relationship_id}" data-client-id="${c.client_id}">
+          ${c.first_name} ${c.last_name} (${c.email})
+        </option>`
+      ).join('');
+
+    // Pre-select if ?client= param is in URL
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('client')) {
+      clientSelect.value = params.get('client');
+    }
+
+  } catch (e) {
+    clientSelect.innerHTML = '<option value="">Failed to load clients</option>';
+    clientSelect.disabled = true;
+  }
+
+  // ── Submit ────────────────────────────────────────────────────────────────
+  document.getElementById('submit-btn').addEventListener('click', async () => {
+    const relationship_id = clientSelect.value;
+    const prompt_type     = document.getElementById('prompt_type').value;
+    const title           = document.getElementById('title').value.trim();
+    const description     = document.getElementById('description').value.trim();
+    const prompt_content  = document.getElementById('prompt_content').value.trim();
+    const instructions    = document.getElementById('instructions').value.trim();
+
+    if (!relationship_id || !prompt_type || !title || !description || !prompt_content) {
+      showAlert('Please fill in all required fields.');
+      return;
+    }
+
+    const btn = document.getElementById('submit-btn');
+    btn.disabled = true;
+    btn.textContent = 'Creating...';
+
+    try {
+      const resp = await fetch('/therapist/prompts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          relationship_id: parseInt(relationship_id),
+          prompt_type,
+          title,
+          description,
+          prompt_content,
+          instructions: instructions || null
+        })
+      });
+      const data = await resp.json();
+
+      if (resp.ok) {
+        showAlert('Prompt created and sent to client! <a href="/therapist/clients">← Back to clients</a>', 'success');
+        // Reset form
+        clientSelect.value = '';
+        document.getElementById('prompt_type').value = '';
+        document.getElementById('title').value = '';
+        document.getElementById('description').value = '';
+        document.getElementById('prompt_content').value = '';
+        document.getElementById('instructions').value = '';
+      } else {
+        showAlert(data.error || 'Failed to create prompt.');
+      }
+    } catch (e) {
+      showAlert('Network error. Please try again.');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Create Prompt';
+    }
+  });
+
+});
+</script>
 {% endblock %}

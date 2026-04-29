@@ -4,48 +4,128 @@
 
 {% block content %}
 <div class="container">
+  <div class="card">
+    <h1>Therapist Dashboard</h1>
+    <p style="color: var(--text-muted);">Manage your clients and therapeutic interventions</p>
+  </div>
+
+  <!-- Stats row -->
+  <div class="grid grid-3">
+    <div class="card" style="text-align:center;">
+      <div style="font-size:3rem;margin-bottom:1rem;">👥</div>
+      <h3>Active Clients</h3>
+      <p id="stat-clients" style="font-size:2.5rem;color:var(--primary);margin:1rem 0;">—</p>
+      <a href="/therapist/clients" class="btn btn-primary">View Clients</a>
+    </div>
+    <div class="card" style="text-align:center;">
+      <div style="font-size:3rem;margin-bottom:1rem;">📋</div>
+      <h3>Pending Responses</h3>
+      <p id="stat-responses" style="font-size:2.5rem;color:var(--warning);margin:1rem 0;">—</p>
+      <a href="/therapist/view-responses" class="btn btn-primary">Review</a>
+    </div>
+    <div class="card" style="text-align:center;">
+      <div style="font-size:3rem;margin-bottom:1rem;">💌</div>
+      <h3>Recent Capsules</h3>
+      <p id="stat-capsules" style="font-size:2.5rem;color:var(--primary);margin:1rem 0;">—</p>
+      <a href="/messaging/inbox" class="btn btn-primary">View</a>
+    </div>
+  </div>
+
+  <div class="grid grid-2">
+    <!-- Quick actions -->
     <div class="card">
-        <h1>Therapist Dashboard</h1>
-        <p style="color: var(--text-muted);">Manage your clients and therapeutic interventions</p>
+      <h3 style="margin-bottom:1rem;">Quick Actions</h3>
+      <div style="display:flex;flex-direction:column;gap:1rem;">
+        <a href="/therapist/clients" class="btn btn-outline">👥 Manage Clients</a>
+        <a href="/therapist/create-prompt" class="btn btn-outline">➕ Create Prompt</a>
+        <a href="/messaging/inbox" class="btn btn-outline">💌 Review Capsules</a>
+        <a href="/therapist/add-client" class="btn btn-outline">🔗 Add Client</a>
+      </div>
     </div>
 
-    <div class="grid grid-3">
-        <div class="card" style="text-align: center;">
-            <div style="font-size: 3rem; margin-bottom: 1rem;">👥</div>
-            <h3>Active Clients</h3>
-            <p style="font-size: 2.5rem; color: var(--primary); margin: 1rem 0;">0</p>
-            <a href="/therapist/clients" class="btn btn-primary">View Clients</a>
-        </div>
-
-        <div class="card" style="text-align: center;">
-            <div style="font-size: 3rem; margin-bottom: 1rem;">📋</div>
-            <h3>Pending Responses</h3>
-            <p style="font-size: 2.5rem; color: var(--warning); margin: 1rem 0;">0</p>
-            <a href="/therapist/view-prompt-responses" class="btn btn-primary">Review</a>
-        </div>
-
-        <div class="card" style="text-align: center;">
-            <div style="font-size: 3rem; margin-bottom: 1rem;">💌</div>
-            <h3>Recent Capsules</h3>
-            <p style="font-size: 2.5rem; color: var(--primary); margin: 1rem 0;">0</p>
-            <a href="/messaging/inbox" class="btn btn-primary">View</a>
-        </div>
+    <!-- Recent clients -->
+    <div class="card">
+      <h3 style="margin-bottom:1rem;">Recent Clients</h3>
+      <div id="recent-clients">
+        <p style="color:var(--text-muted);text-align:center;padding:2rem;">Loading...</p>
+      </div>
     </div>
-
-    <div class="grid grid-2">
-        <div class="card">
-            <h3 style="margin-bottom: 1rem;">Quick Actions</h3>
-            <div style="display: flex; flex-direction: column; gap: 1rem;">
-                <a href="/therapist/clients" class="btn btn-outline">👥 Manage Clients</a>
-                <a href="/therapist/create-prompt" class="btn btn-outline">➕ Create Prompt</a>
-                <a href="/messaging/inbox" class="btn btn-outline">💌 Review Capsules</a>
-            </div>
-        </div>
-
-        <div class="card">
-            <h3 style="margin-bottom: 1rem;">Recent Activity</h3>
-            <p style="color: var(--text-muted); text-align: center; padding: 2rem;">No recent activity</p>
-        </div>
-    </div>
+  </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', async () => {
+
+  // ── Load dashboard stats ──────────────────────────────────────────────────
+try {
+  const resp = await fetch('/therapist/api/dashboard');
+  const data = await resp.json();
+  console.log('Dashboard API response:', data);
+
+  if (resp.ok) {
+    document.getElementById('stat-clients').textContent   = data.active_clients   ?? 0;
+    document.getElementById('stat-responses').textContent = data.pending_responses ?? 0;
+    document.getElementById('stat-capsules').textContent  = data.total_capsules    ?? 0;
+  }
+} catch (e) {
+  console.error('Failed to load dashboard stats', e);
+}
+
+  // ── Load recent clients ───────────────────────────────────────────────────
+  try {
+    const resp = await fetch('/therapist/api/clients');
+    const data = await resp.json();
+    const container = document.getElementById('recent-clients');
+
+    if (!resp.ok || data.clients.length === 0) {
+      container.innerHTML = `
+        <p style="color:var(--text-muted);text-align:center;padding:2rem;">No active clients yet.</p>
+        <a href="/therapist/add-client" class="btn btn-primary" style="width:100%;text-align:center;">➕ Add Your First Client</a>`;
+      return;
+    }
+
+    // Show latest 4 clients
+    const recent = data.clients.slice(0, 4);
+    container.innerHTML = recent.map(c => `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:0.75rem 0;border-bottom:1px solid var(--border);">
+        <div style="display:flex;align-items:center;gap:0.75rem;">
+          <div style="width:38px;height:38px;border-radius:50%;background:var(--primary-light);display:flex;align-items:center;justify-content:center;color:white;font-weight:600;">
+            ${escapeHtml(c.first_name[0])}${escapeHtml(c.last_name[0])}
+          </div>
+          <div>
+            <div style="font-weight:600;">${escapeHtml(c.first_name)} ${escapeHtml(c.last_name)}</div>
+            <div style="font-size:0.8rem;color:var(--text-muted);">Since ${formatDate(c.relationship_start_date)}</div>
+          </div>
+        </div>
+        <a href="/therapist/clients/${c.client_id}" class="btn btn-outline" style="font-size:0.8rem;padding:0.4rem 0.8rem;">View</a>
+      </div>
+    `).join('');
+
+    // "See all" link if more than 4
+    if (data.clients.length > 4) {
+      container.innerHTML += `
+        <a href="/therapist/clients" style="display:block;text-align:center;margin-top:1rem;color:var(--primary);">
+          See all ${data.clients.length} clients →
+        </a>`;
+    }
+
+  } catch (e) {
+    document.getElementById('recent-clients').innerHTML =
+      `<p style="color:var(--text-muted);text-align:center;padding:2rem;">Failed to load clients.</p>`;
+  }
+
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function formatDate(dateStr) {
+    return new Date(dateStr).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' });
+  }
+
+});
+</script>
 {% endblock %}

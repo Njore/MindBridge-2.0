@@ -13,7 +13,7 @@ class User(db.Model):
     user_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     email = db.Column(db.String(255), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(255), nullable=False)
-    user_type = db.Column(db.Enum('client', 'therapist'), nullable=False)
+    user_type = db.Column(db.Enum('client', 'therapist', 'admin'), nullable=False)
     first_name = db.Column(db.String(100), nullable=False)
     last_name = db.Column(db.String(100), nullable=False)
     phone = db.Column(db.String(20))
@@ -71,6 +71,14 @@ class Capsule(db.Model):
         db.Index('idx_therapist_date', 'therapist_id', 'created_at'),
         db.Index('idx_sealed_at', 'sealed_at'),
     )
+
+    priority_score = db.Column(db.Float, default=0.0)  # 0.0 to 1.0
+    priority_level = db.Column(db.Enum('LOW', 'MEDIUM', 'HIGH', 'CRITICAL'), default='LOW')
+    priority_analyzed_at = db.Column(db.DateTime)
+    priority_reasons = db.Column(JSON)  # Store why it got this priority
+
+    # For therapist to mark as reviewed
+    priority_reviewed_by_therapist = db.Column(db.Boolean, default=False)
 
 # ========================================
 # 4. MESSAGES
@@ -188,7 +196,7 @@ class PromptResponse(db.Model):
     relationship_id = db.Column(db.Integer, db.ForeignKey('client_therapist_relationships.relationship_id', ondelete='CASCADE'), nullable=False)
     response_content = db.Column(db.Text, nullable=False)
     insights_gained = db.Column(db.Text)
-    emotional_state = db.Column(db.Enum('improved', 'neutral', 'worsened'), default='neutral')
+    emotional_state = db.Column(db.String(100))
     response_date = db.Column(db.DateTime, default=datetime.utcnow)
     is_shared_with_therapist = db.Column(db.Boolean, default=False)
     shared_date = db.Column(db.DateTime)
@@ -359,4 +367,30 @@ class ConsentAgreement(db.Model):
     
     __table_args__ = (
         db.Index('idx_user_type', 'user_id', 'agreement_type'),
+    )
+
+# ========================================
+# ADD TO models.py
+# ========================================
+
+class DataErasureRequest(db.Model):
+    __tablename__ = 'data_erasure_requests'
+
+    request_id   = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    user_id      = db.Column(db.Integer, db.ForeignKey('users.user_id', ondelete='CASCADE'), nullable=False)
+    requested_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    reason       = db.Column(db.Text, nullable=True)
+    status       = db.Column(
+        db.Enum('pending', 'approved', 'completed', 'rejected'),
+        default='pending',
+        nullable=False
+    )
+    reviewed_by  = db.Column(db.Integer, db.ForeignKey('users.user_id'), nullable=True)
+    reviewed_at  = db.Column(db.DateTime, nullable=True)
+    completed_at = db.Column(db.DateTime, nullable=True)
+    notes        = db.Column(db.Text, nullable=True)  # Admin-only notes
+
+    __table_args__ = (
+        db.Index('idx_erasure_user_status', 'user_id', 'status'),
+        db.Index('idx_erasure_status', 'status'),
     )

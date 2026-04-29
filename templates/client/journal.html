@@ -4,107 +4,311 @@
 
 {% block extra_css %}
 <style>
-    .pocket-card {
-        background: white;
-        border: 2px solid var(--border);
-        border-radius: 12px;
-        padding: 1.5rem;
-        margin-bottom: 1.5rem;
-        transition: all 0.3s;
-    }
-
-    .pocket-card:hover {
-        border-color: var(--primary);
-        box-shadow: 0 4px 12px var(--shadow);
-    }
-
-    .pocket-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 1rem;
-        padding-bottom: 0.75rem;
-        border-bottom: 2px solid var(--border);
-    }
-
-    .pocket-number {
-        background: var(--primary);
-        color: white;
-        width: 40px;
-        height: 40px;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: bold;
-        font-size: 1.2rem;
-    }
-
-    .day-label {
-        font-weight: 600;
-        color: var(--primary-dark);
-        font-size: 1.1rem;
-    }
+  .pocket-card {
+    background: white;
+    border: 2px solid var(--border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    transition: all 0.3s;
+  }
+  .pocket-card:hover {
+    border-color: var(--primary);
+    box-shadow: 0 4px 12px var(--shadow);
+  }
+  .pocket-card.today {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(139,123,139,0.15);
+  }
+  .pocket-card.locked {
+    opacity: 0.7;
+  }
+  .pocket-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 2px solid var(--border);
+  }
+  .pocket-number {
+    background: var(--primary);
+    color: white;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 1.2rem;
+    flex-shrink: 0;
+  }
+  .pocket-number.today-num {
+    background: var(--primary-dark);
+    box-shadow: 0 0 0 3px var(--accent);
+  }
+  .pocket-number.future-num {
+    background: var(--text-muted);
+  }
+  .day-label { font-weight: 600; color: var(--primary-dark); font-size: 1.1rem; }
+  .pocket-textarea {
+    width: 100%;
+    min-height: 120px;
+    padding: 1rem;
+    border: 2px solid var(--border);
+    border-radius: 8px;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.95rem;
+    line-height: 1.6;
+    resize: vertical;
+    background: var(--bg-light);
+    color: var(--text-dark);
+    transition: border-color 0.3s;
+    box-sizing: border-box;
+  }
+  .pocket-textarea:focus {
+    outline: none;
+    border-color: var(--primary);
+    background: white;
+  }
+  .pocket-textarea:disabled {
+    cursor: not-allowed;
+    color: var(--text-muted);
+  }
+  .save-indicator {
+    font-size: 0.8rem;
+    margin-top: 0.5rem;
+    height: 1.2rem;
+    transition: opacity 0.3s;
+  }
+  .save-indicator.saving { color: var(--warning); }
+  .save-indicator.saved  { color: var(--success); }
+  .save-indicator.error  { color: var(--danger); }
+  .week-nav {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+    background: var(--bg-light);
+    border-radius: 12px;
+  }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="container">
-    <div class="card">
-        <div class="card-header">
-            <h1>📝 My 7 Pockets</h1>
-            <p style="color: var(--text-muted);">Private, encrypted journal - one pocket for each day of the week.</p>
-        </div>
-
-        <div class="alert alert-success">
-            <strong>🔒 100% Private:</strong> These entries are encrypted and NEVER shared with anyone, including your therapist.
-        </div>
-
-        {% set days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] %}
-        {% for i in range(1, 8) %}
-        <div class="pocket-card">
-            <div class="pocket-header">
-                <div style="display: flex; align-items: center; gap: 1rem;">
-                    <div class="pocket-number">{{ i }}</div>
-                    <div>
-                        <div class="day-label">{{ days[i-1] }}</div>
-                        <small style="color: var(--text-muted);">Pocket {{ i }}</small>
-                    </div>
-                </div>
-                <button onclick="editPocket({{ i }})" class="btn btn-primary">✏️ Edit</button>
-            </div>
-            <div id="pocket-{{ i }}-content" style="min-height: 80px; padding: 1rem; background: var(--bg-light); border-radius: 8px;">
-                <em style="color: var(--text-muted);">Click Edit to add your thoughts...</em>
-            </div>
-        </div>
-        {% endfor %}
+  <div class="card">
+    <div class="card-header">
+      <h1>📝 My 7 Pockets</h1>
+      <p style="color:var(--text-muted);">Private, encrypted journal — one pocket per day of the week.</p>
     </div>
+
+    <div class="alert alert-success">
+      <strong>🔒 100% Private:</strong> These entries are encrypted and NEVER shared with anyone, including your therapist.
+    </div>
+
+    <!-- Week navigation -->
+    <div class="week-nav">
+      <button id="prev-week-btn" class="btn btn-outline" style="padding:0.5rem 1rem;">← Previous Week</button>
+      <div style="text-align:center;">
+        <div style="font-weight:600;font-size:1.05rem;" id="week-label">Loading...</div>
+        <div style="font-size:0.85rem;color:var(--text-muted);" id="week-sublabel"></div>
+      </div>
+      <button id="next-week-btn" class="btn btn-outline" style="padding:0.5rem 1rem;" disabled>Next Week →</button>
+    </div>
+
+    <div id="alert-area"></div>
+
+    <!-- Pocket cards rendered by JS -->
+    <div id="pockets-container">
+      <p style="text-align:center;color:var(--text-muted);padding:2rem;">Loading your journal...</p>
+    </div>
+  </div>
 </div>
+{% endblock %}
 
+{% block scripts %}
 <script>
-function editPocket(num) {
-    const content = document.getElementById(`pocket-${num}-content`).textContent.trim();
-    const newContent = prompt(`Edit Pocket ${num}:`, content === 'Click Edit to add your thoughts...' ? '' : content);
+document.addEventListener('DOMContentLoaded', () => {
 
-    if (newContent !== null) {
-        fetch('/client/pockets', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                pocket_number: num,
-                content: newContent,
-                date: new Date().toISOString().split('T')[0]
-            })
-        })
-        .then(r => r.json())
-        .then(data => {
-            if (data.message) {
-                document.getElementById(`pocket-${num}-content`).textContent = newContent || 'Click Edit to add your thoughts...';
-                alert('Saved!');
-            }
-        })
-        .catch(e => alert('Error: ' + e));
+  const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+  // saveTimers per pocket to debounce autosave
+  const saveTimers = {};
+
+  // Track which week offset we're viewing (0 = current, -1 = last week, etc.)
+  let weekOffset = 0;
+
+  // ── Date helpers ────────────────────────────────────────────────────────────
+  function getWeekDates(offset = 0) {
+    const today = new Date();
+    // Monday = 0, Sunday = 6  (JS: 0=Sun so we adjust)
+    const dayOfWeek = (today.getDay() + 6) % 7; // Mon=0 … Sun=6
+    const monday = new Date(today);
+    monday.setDate(today.getDate() - dayOfWeek + offset * 7);
+    monday.setHours(0, 0, 0, 0);
+
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      return d.toISOString().split('T')[0]; // YYYY-MM-DD
+    });
+  }
+
+  function todayStr() {
+    return new Date().toISOString().split('T')[0];
+  }
+
+  function formatDisplay(dateStr) {
+    return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-GB',
+      { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  // ── Render week ─────────────────────────────────────────────────────────────
+  async function renderWeek(offset) {
+    const dates   = getWeekDates(offset);
+    const today   = todayStr();
+    const isCurrentWeek = offset === 0;
+
+    // Update nav labels
+    document.getElementById('week-label').textContent =
+      `Week of ${formatDisplay(dates[0])} – ${formatDisplay(dates[6])}`;
+    document.getElementById('week-sublabel').textContent =
+      isCurrentWeek ? 'Current week' : offset < 0 ? `${Math.abs(offset)} week${Math.abs(offset) > 1 ? 's' : ''} ago` : '';
+
+    document.getElementById('next-week-btn').disabled = offset >= 0;
+    document.getElementById('prev-week-btn').disabled = false;
+
+    // Fetch saved pockets for Mon and the week range
+    let savedMap = {}; // date+pocket_number -> content
+    try {
+      const resp = await fetch(`/client/pockets/week-range?start=${dates[0]}&end=${dates[6]}`);
+      if (resp.ok) {
+        const data = await resp.json();
+        data.pockets.forEach(p => {
+          savedMap[`${p.date}_${p.pocket_number}`] = p.content;
+        });
+      }
+    } catch (e) {}
+
+    // Build cards
+    const container = document.getElementById('pockets-container');
+    container.innerHTML = dates.map((dateStr, i) => {
+      const pocketNum  = i + 1; // 1-7
+      const isToday    = dateStr === today;
+      const isFuture   = dateStr > today;
+      const savedContent = savedMap[`${dateStr}_${pocketNum}`] || '';
+
+      return `
+        <div class="pocket-card ${isToday ? 'today' : ''} ${isFuture ? 'locked' : ''}" id="card-${pocketNum}">
+          <div class="pocket-header">
+            <div style="display:flex;align-items:center;gap:1rem;">
+              <div class="pocket-number ${isToday ? 'today-num' : ''} ${isFuture ? 'future-num' : ''}">${pocketNum}</div>
+              <div>
+                <div class="day-label">
+                  ${DAYS[i]}
+                  ${isToday ? '<span style="background:var(--primary);color:white;font-size:0.7rem;padding:0.1rem 0.5rem;border-radius:10px;margin-left:0.5rem;vertical-align:middle;">TODAY</span>' : ''}
+                </div>
+                <small style="color:var(--text-muted);">${formatDisplay(dateStr)}</small>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:0.75rem;">
+              <span id="save-status-${pocketNum}" class="save-indicator"></span>
+              ${!isFuture
+                ? `<button class="btn btn-primary" style="padding:0.5rem 1rem;font-size:0.85rem;"
+                     onclick="savePocket(${pocketNum}, '${dateStr}')">💾 Save</button>`
+                : `<span style="font-size:0.8rem;color:var(--text-muted);">Not yet</span>`
+              }
+            </div>
+          </div>
+
+          <textarea
+            id="pocket-textarea-${pocketNum}"
+            class="pocket-textarea"
+            data-date="${dateStr}"
+            data-pocket="${pocketNum}"
+            placeholder="${isFuture ? 'This day hasn\'t arrived yet...' : `Write your ${DAYS[i]} thoughts here...`}"
+            ${isFuture ? 'disabled' : ''}
+            oninput="scheduleAutosave(${pocketNum}, '${dateStr}')"
+          >${savedContent}</textarea>
+
+          ${savedContent && !isFuture
+            ? `<div style="font-size:0.8rem;color:var(--success);margin-top:0.4rem;">✓ Entry saved</div>`
+            : ''
+          }
+        </div>`;
+    }).join('');
+  }
+
+  // ── Autosave (debounced 2s after typing stops) ─────────────────────────────
+  window.scheduleAutosave = function(pocketNum, dateStr) {
+    clearTimeout(saveTimers[pocketNum]);
+    setStatus(pocketNum, 'saving', 'Typing...');
+    saveTimers[pocketNum] = setTimeout(() => {
+      savePocket(pocketNum, dateStr, true);
+    }, 2000);
+  };
+
+  // ── Manual / auto save ─────────────────────────────────────────────────────
+  window.savePocket = async function(pocketNum, dateStr, isAuto = false) {
+    const textarea = document.getElementById(`pocket-textarea-${pocketNum}`);
+    const content  = textarea.value.trim();
+
+    if (!content) {
+      if (!isAuto) setStatus(pocketNum, 'error', 'Cannot save empty pocket.');
+      return;
     }
-}
+
+    setStatus(pocketNum, 'saving', isAuto ? 'Autosaving...' : 'Saving...');
+
+    try {
+      const resp = await fetch('/client/pockets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pocket_number: pocketNum,
+          content,
+          date: dateStr
+        })
+      });
+      const data = await resp.json();
+
+      if (resp.ok) {
+        setStatus(pocketNum, 'saved', '✓ Saved');
+        setTimeout(() => setStatus(pocketNum, '', ''), 3000);
+      } else {
+        setStatus(pocketNum, 'error', data.error || 'Save failed.');
+      }
+    } catch (e) {
+      setStatus(pocketNum, 'error', 'Network error.');
+    }
+  };
+
+  function setStatus(pocketNum, type, msg) {
+    const el = document.getElementById(`save-status-${pocketNum}`);
+    if (!el) return;
+    el.className = `save-indicator ${type}`;
+    el.textContent = msg;
+  }
+
+  // ── Week navigation ─────────────────────────────────────────────────────────
+  document.getElementById('prev-week-btn').addEventListener('click', () => {
+    weekOffset--;
+    renderWeek(weekOffset);
+  });
+
+  document.getElementById('next-week-btn').addEventListener('click', () => {
+    if (weekOffset < 0) {
+      weekOffset++;
+      renderWeek(weekOffset);
+    }
+  });
+
+  // ── Boot ───────────────────────────────────────────────────────────────────
+  renderWeek(0);
+
+});
 </script>
 {% endblock %}

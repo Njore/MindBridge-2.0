@@ -1,0 +1,1196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MindBridge — Admin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Sora:wght@300;400;600;700&display=swap" rel="stylesheet" />
+  <style>
+    /* ── TOKENS ─────────────────────────────────────────── */
+    :root {
+      --bg:        #0d0f14;
+      --surface:   #13161e;
+      --border:    #1e2330;
+      --border-hi: #2a3045;
+      --text:      #c8cfe0;
+      --muted:     #5a6380;
+      --accent:    #4f7cff;
+      --accent-lo: rgba(79,124,255,.12);
+      --red:       #ff4d6a;
+      --red-lo:    rgba(255,77,106,.12);
+      --amber:     #ffb347;
+      --amber-lo:  rgba(255,179,71,.12);
+      --green:     #3ddba4;
+      --green-lo:  rgba(61,219,164,.12);
+      --mono:      'DM Mono', monospace;
+      --sans:      'Sora', sans-serif;
+      --radius:    8px;
+      --sidebar-w: 220px;
+    }
+
+    /* ── RESET ──────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body {
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.6;
+      display: flex;
+    }
+
+    /* ── SIDEBAR ────────────────────────────────────────── */
+    .sidebar {
+      width: var(--sidebar-w);
+      min-height: 100vh;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      position: fixed;
+      top: 0; left: 0; bottom: 0;
+    }
+    .sidebar-logo {
+      padding: 24px 20px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .sidebar-logo span {
+      font-weight: 700;
+      font-size: 16px;
+      color: #fff;
+      letter-spacing: -.3px;
+    }
+    .sidebar-logo small {
+      display: block;
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--muted);
+      margin-top: 2px;
+      letter-spacing: .5px;
+    }
+    .nav { padding: 12px 10px; flex: 1; }
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 12px;
+      border-radius: var(--radius);
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 500;
+      transition: background .15s, color .15s;
+      border: none;
+      background: none;
+      width: 100%;
+      text-align: left;
+    }
+    .nav-item:hover  { background: var(--border); color: var(--text); }
+    .nav-item.active { background: var(--accent-lo); color: var(--accent); }
+    .nav-item .icon  { font-size: 15px; width: 18px; text-align: center; }
+    .nav-badge {
+      margin-left: auto;
+      background: var(--red);
+      color: #fff;
+      font-size: 10px;
+      font-family: var(--mono);
+      padding: 1px 6px;
+      border-radius: 20px;
+      min-width: 18px;
+      text-align: center;
+    }
+    .sidebar-footer {
+      padding: 14px 20px;
+      border-top: 1px solid var(--border);
+      font-size: 11px;
+      color: var(--muted);
+      font-family: var(--mono);
+    }
+
+    /* ── MAIN ───────────────────────────────────────────── */
+    .main {
+      margin-left: var(--sidebar-w);
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+    .topbar {
+      padding: 18px 28px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      background: var(--bg);
+      z-index: 10;
+    }
+    .topbar-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #fff;
+      letter-spacing: -.2px;
+    }
+    .topbar-sub {
+      font-size: 11px;
+      color: var(--muted);
+      font-family: var(--mono);
+      margin-top: 1px;
+    }
+    .refresh-btn {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      background: var(--border);
+      border: 1px solid var(--border-hi);
+      color: var(--text);
+      padding: 7px 14px;
+      border-radius: var(--radius);
+      cursor: pointer;
+      font-size: 12px;
+      font-family: var(--mono);
+      transition: background .15s;
+    }
+    .refresh-btn:hover { background: var(--border-hi); }
+
+    /* ── CONTENT PANELS ─────────────────────────────────── */
+    .panel { display: none; padding: 28px; animation: fadein .2s ease; }
+    .panel.active { display: block; }
+    @keyframes fadein { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+    /* ── STAT CARDS ─────────────────────────────────────── */
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 14px;
+      margin-bottom: 28px;
+    }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+      position: relative;
+      overflow: hidden;
+    }
+    .stat-card::before {
+      content: '';
+      position: absolute;
+      inset: 0 0 0 0;
+      border-left: 3px solid var(--accent);
+      border-radius: var(--radius) 0 0 var(--radius);
+    }
+    .stat-card.red::before  { border-color: var(--red); }
+    .stat-card.amber::before { border-color: var(--amber); }
+    .stat-card.green::before { border-color: var(--green); }
+    .stat-label {
+      font-size: 11px;
+      color: var(--muted);
+      font-family: var(--mono);
+      letter-spacing: .5px;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    .stat-value {
+      font-size: 28px;
+      font-weight: 700;
+      color: #fff;
+      font-family: var(--mono);
+      line-height: 1;
+    }
+    .stat-sub {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 5px;
+    }
+
+    /* ── SECTION HEADER ─────────────────────────────────── */
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+    .section-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #fff;
+      letter-spacing: -.1px;
+    }
+    .section-count {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    /* ── FILTER BAR ─────────────────────────────────────── */
+    .filter-bar {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
+    .filter-bar input,
+    .filter-bar select {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 7px 12px;
+      border-radius: var(--radius);
+      font-size: 12px;
+      font-family: var(--mono);
+      outline: none;
+      transition: border-color .15s;
+    }
+    .filter-bar input:focus,
+    .filter-bar select:focus { border-color: var(--accent); }
+    .filter-bar select option { background: var(--surface); }
+
+    /* ── TABLE ──────────────────────────────────────────── */
+    .table-wrap {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12.5px;
+    }
+    thead th {
+      background: var(--border);
+      padding: 10px 16px;
+      text-align: left;
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: .6px;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-weight: 500;
+    }
+    tbody tr {
+      border-top: 1px solid var(--border);
+      transition: background .12s;
+    }
+    tbody tr:hover { background: rgba(255,255,255,.02); }
+    tbody td { padding: 10px 16px; vertical-align: middle; }
+    .empty-row td {
+      text-align: center;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 12px;
+      padding: 32px;
+    }
+
+    /* ── BADGES ─────────────────────────────────────────── */
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-family: var(--mono);
+      font-weight: 500;
+      letter-spacing: .3px;
+    }
+    .badge-red    { background: var(--red-lo);   color: var(--red);   }
+    .badge-amber  { background: var(--amber-lo); color: var(--amber); }
+    .badge-green  { background: var(--green-lo); color: var(--green); }
+    .badge-accent { background: var(--accent-lo); color: var(--accent); }
+    .badge-muted  { background: var(--border);   color: var(--muted); }
+
+    /* ── ACTION BUTTONS ─────────────────────────────────── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 5px 10px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 11px;
+      font-family: var(--mono);
+      border: 1px solid transparent;
+      transition: opacity .15s;
+    }
+    .btn:hover { opacity: .8; }
+    .btn-ghost { background: var(--border); color: var(--text); border-color: var(--border-hi); }
+    .btn-red   { background: var(--red-lo); color: var(--red); border-color: rgba(255,77,106,.25); }
+    .btn-green { background: var(--green-lo); color: var(--green); border-color: rgba(61,219,164,.25); }
+    .btn-accent { background: var(--accent-lo); color: var(--accent); border-color: rgba(79,124,255,.25); }
+
+    /* ── MODAL ──────────────────────────────────────────── */
+    .modal-backdrop {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,.65);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border-hi);
+      border-radius: 10px;
+      padding: 28px;
+      width: 440px;
+      max-width: 95vw;
+    }
+    .modal h3 { font-size: 15px; color: #fff; margin-bottom: 16px; }
+    .modal label { font-size: 11px; color: var(--muted); font-family: var(--mono); display: block; margin-bottom: 5px; }
+    .modal textarea, .modal input, .modal select {
+      width: 100%; background: var(--bg); border: 1px solid var(--border);
+      color: var(--text); padding: 9px 12px; border-radius: var(--radius);
+      font-size: 13px; font-family: var(--sans); outline: none;
+      transition: border-color .15s; resize: vertical;
+    }
+    .modal textarea:focus, .modal input:focus, .modal select:focus { border-color: var(--accent); }
+    .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+    .modal-actions .btn { padding: 8px 16px; font-size: 12px; }
+
+    /* ── TOAST ──────────────────────────────────────────── */
+    #toast {
+      position: fixed; bottom: 24px; right: 24px;
+      background: var(--surface);
+      border: 1px solid var(--border-hi);
+      color: var(--text);
+      padding: 12px 18px;
+      border-radius: var(--radius);
+      font-size: 13px;
+      z-index: 200;
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity .2s, transform .2s;
+      pointer-events: none;
+      max-width: 320px;
+    }
+    #toast.show { opacity: 1; transform: none; }
+    #toast.err  { border-color: var(--red); color: var(--red); }
+    #toast.ok   { border-color: var(--green); color: var(--green); }
+
+    /* ── LOADING ────────────────────────────────────────── */
+    .loading {
+      display: flex; align-items: center; justify-content: center;
+      padding: 40px; color: var(--muted); font-family: var(--mono); font-size: 12px; gap: 10px;
+    }
+    .spinner {
+      width: 16px; height: 16px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── SCORE BAR ──────────────────────────────────────── */
+    .score-bar-wrap { display: flex; align-items: center; gap: 8px; }
+    .score-bar { flex: 1; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+    .score-bar-fill { height: 100%; border-radius: 2px; background: var(--accent); transition: width .3s; }
+    .score-bar-fill.high { background: var(--amber); }
+    .score-bar-fill.critical { background: var(--red); }
+
+    /* ── URGENCY PULSE ──────────────────────────────────── */
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
+    .urgent-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--red); display: inline-block;
+      animation: pulse 1.4s ease infinite;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── SIDEBAR ───────────────────────────────────────────── -->
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <span>MindBridge</span>
+    <small>ADMIN CONSOLE</small>
+  </div>
+  <nav class="nav">
+    <button class="nav-item active" onclick="navigate('overview')">
+      <span class="icon">◈</span> Overview
+    </button>
+    <button class="nav-item" onclick="navigate('safety')">
+      <span class="icon">⚑</span> Safety Alerts
+      <span class="nav-badge" id="badge-safety" style="display:none"></span>
+    </button>
+    <button class="nav-item" onclick="navigate('backlog')">
+      <span class="icon">◎</span> Notif Backlog
+      <span class="nav-badge" id="badge-backlog" style="display:none"></span>
+    </button>
+    <button class="nav-item" onclick="navigate('users')">
+      <span class="icon">⊹</span> Users
+    </button>
+    <button class="nav-item" onclick="navigate('relationships')">
+      <span class="icon">⇌</span> Relationships
+    </button>
+    <button class="nav-item" onclick="navigate('crisis')">
+      <span class="icon">△</span> Crisis Events
+    </button>
+    <button class="nav-item" onclick="navigate('ai-audit')">
+      <span class="icon">◉</span> AI Audit
+    </button>
+    <button class="nav-item" onclick="navigate('erasure')">
+      <span class="icon">⊘</span> Erasure Requests
+      <span class="nav-badge" id="badge-erasure" style="display:none"></span>
+    </button>
+    <button class="nav-item" onclick="navigate('logs')">
+      <span class="icon">≡</span> Activity Logs
+    </button>
+  </nav>
+  <div class="sidebar-footer" id="last-refresh">—</div>
+  <div style="padding: 10px 10px 14px;">
+    <button class="nav-item" onclick="handleLogout()" style="color:var(--red);width:100%;">
+      <span class="icon">⏻</span> Logout
+    </button>
+  </div>
+</aside>
+
+<!-- ── LOGOUT CONFIRMATION MODAL ──────────────────────────── -->
+<div class="modal-backdrop" id="modal-logout">
+  <div class="modal" style="width:360px;">
+    <h3>Log out?</h3>
+    <p style="color:var(--muted);font-size:13px;margin-bottom:4px;">You will be returned to the login page.</p>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-logout')">Cancel</button>
+      <button class="btn btn-red" onclick="confirmLogout()">Log out</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── MAIN ──────────────────────────────────────────────── -->
+<main class="main">
+  <div class="topbar">
+    <div>
+      <div class="topbar-title" id="panel-title">Overview</div>
+      <div class="topbar-sub" id="panel-sub">Platform health at a glance</div>
+    </div>
+    <button class="refresh-btn" onclick="refreshCurrent()">↻ Refresh</button>
+  </div>
+
+  <!-- OVERVIEW -->
+  <div class="panel active" id="panel-overview">
+    <div class="stat-grid" id="stat-grid">
+      <div class="loading"><div class="spinner"></div> Loading…</div>
+    </div>
+  </div>
+
+  <!-- SAFETY ALERTS -->
+  <div class="panel" id="panel-safety">
+    <div class="filter-bar">
+      <select id="safety-reviewed" onchange="loadSafety()">
+        <option value="">All</option>
+        <option value="false" selected>Unreviewed</option>
+        <option value="true">Reviewed</option>
+      </select>
+      <select id="safety-level" onchange="loadSafety()">
+        <option value="">CRITICAL + HIGH</option>
+        <option value="CRITICAL">CRITICAL only</option>
+        <option value="HIGH">HIGH only</option>
+      </select>
+    </div>
+    <div class="table-wrap" id="safety-table">
+      <div class="loading"><div class="spinner"></div> Loading…</div>
+    </div>
+  </div>
+
+  <!-- NOTIFICATION BACKLOG -->
+  <div class="panel" id="panel-backlog">
+    <div class="table-wrap" id="backlog-table">
+      <div class="loading"><div class="spinner"></div> Loading…</div>
+    </div>
+  </div>
+
+  <!-- USERS -->
+  <div class="panel" id="panel-users">
+    <div class="filter-bar">
+      <input id="user-search" type="text" placeholder="Search name or email…" oninput="loadUsers()" />
+      <select id="user-type" onchange="loadUsers()">
+        <option value="">All types</option>
+        <option value="client">Clients</option>
+        <option value="therapist">Therapists</option>
+      </select>
+      <select id="user-active" onchange="loadUsers()">
+        <option value="">Any status</option>
+        <option value="true">Active</option>
+        <option value="false">Inactive</option>
+      </select>
+      <select id="user-verified" onchange="loadUsers()">
+        <option value="">Any verification</option>
+        <option value="true">Verified</option>
+        <option value="false">Unverified</option>
+      </select>
+    </div>
+    <div class="table-wrap" id="users-table">
+      <div class="loading"><div class="spinner"></div> Loading…</div>
+    </div>
+  </div>
+
+  <!-- RELATIONSHIPS -->
+  <div class="panel" id="panel-relationships">
+    <div class="filter-bar">
+      <select id="rel-status" onchange="loadRelationships()">
+        <option value="active">Active</option>
+        <option value="inactive">Inactive</option>
+        <option value="ended">Ended</option>
+        <option value="">All</option>
+      </select>
+    </div>
+    <div class="table-wrap" id="rel-table">
+      <div class="loading"><div class="spinner"></div> Loading…</div>
+    </div>
+  </div>
+
+  <!-- CRISIS -->
+  <div class="panel" id="panel-crisis">
+    <div class="filter-bar">
+      <select id="crisis-severity" onchange="loadCrisis()">
+        <option value="1">All severities</option>
+        <option value="5">≥ 5</option>
+        <option value="7">≥ 7 (High)</option>
+      </select>
+      <select id="crisis-days" onchange="loadCrisis()">
+        <option value="7">Last 7 days</option>
+        <option value="30" selected>Last 30 days</option>
+        <option value="90">Last 90 days</option>
+      </select>
+    </div>
+    <div class="table-wrap" id="crisis-table">
+      <div class="loading"><div class="spinner"></div> Loading…</div>
+    </div>
+  </div>
+
+  <!-- AI AUDIT -->
+  <div class="panel" id="panel-ai-audit">
+    <div class="table-wrap" id="audit-table">
+      <div class="loading"><div class="spinner"></div> Loading…</div>
+    </div>
+  </div>
+
+  <!-- ERASURE REQUESTS -->
+  <div class="panel" id="panel-erasure">
+    <div class="filter-bar">
+      <select id="erasure-status" onchange="loadErasure()">
+        <option value="pending">Pending</option>
+        <option value="completed">Completed</option>
+        <option value="rejected">Rejected</option>
+        <option value="">All</option>
+      </select>
+    </div>
+    <div class="table-wrap" id="erasure-table">
+      <div class="loading"><div class="spinner"></div> Loading…</div>
+    </div>
+  </div>
+
+  <!-- ACTIVITY LOGS -->
+  <div class="panel" id="panel-logs">
+    <div class="filter-bar">
+      <input id="log-user" type="text" placeholder="User ID…" style="width:90px" />
+      <input id="log-action" type="text" placeholder="Action type…" />
+      <select id="log-days" onchange="loadLogs()">
+        <option value="1">Last 24h</option>
+        <option value="7" selected>Last 7 days</option>
+        <option value="30">Last 30 days</option>
+      </select>
+      <button class="btn btn-ghost" onclick="loadLogs()">Filter</button>
+    </div>
+    <div class="table-wrap" id="logs-table">
+      <div class="loading"><div class="spinner"></div> Loading…</div>
+    </div>
+  </div>
+</main>
+
+<!-- ── MODALS ──────────────────────────────────────────────── -->
+<!-- Dissolve relationship -->
+<div class="modal-backdrop" id="modal-dissolve">
+  <div class="modal">
+    <h3>Dissolve Relationship</h3>
+    <label>Reason (shown to both parties)</label>
+    <textarea id="dissolve-reason" rows="3" placeholder="e.g. Therapist leaving platform"></textarea>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-dissolve')">Cancel</button>
+      <button class="btn btn-red" onclick="confirmDissolve()">Dissolve</button>
+    </div>
+  </div>
+</div>
+
+<!-- Erasure action -->
+<div class="modal-backdrop" id="modal-erasure">
+  <div class="modal">
+    <h3 id="erasure-modal-title">Review Erasure Request</h3>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.5" id="erasure-modal-info"></p>
+    <label>Admin notes</label>
+    <textarea id="erasure-notes" rows="3" placeholder="Optional internal notes"></textarea>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-erasure')">Cancel</button>
+      <button class="btn btn-red" onclick="confirmErasure('reject')">Reject</button>
+      <button class="btn btn-green" onclick="confirmErasure('approve')">Approve & Anonymize</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<script>
+// ── STATE ───────────────────────────────────────────────────
+let currentPanel = 'overview';
+let dissolveRelId = null;
+let erasureReqId  = null;
+
+const PANELS = {
+  overview:      { title: 'Overview',            sub: 'Platform health at a glance' },
+  safety:        { title: 'Safety Alerts',        sub: 'CRITICAL and HIGH priority capsules' },
+  backlog:       { title: 'Notification Backlog', sub: 'Therapists with unread crisis alerts' },
+  users:         { title: 'Users',                sub: 'Manage clients and therapists' },
+  relationships: { title: 'Relationships',        sub: 'Client-therapist pairings' },
+  crisis:        { title: 'Crisis Events',        sub: 'Platform-wide crisis log' },
+  'ai-audit':    { title: 'AI Audit',             sub: 'Capsules flagged by Granite analysis' },
+  erasure:       { title: 'Erasure Requests',     sub: 'GDPR right-to-erasure queue' },
+  logs:          { title: 'Activity Logs',        sub: 'Full audit trail' },
+};
+
+// ── NAVIGATION ──────────────────────────────────────────────
+function navigate(panel) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById(`panel-${panel}`).classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n => {
+    if (n.getAttribute('onclick') === `navigate('${panel}')`) n.classList.add('active');
+  });
+  currentPanel = panel;
+  document.getElementById('panel-title').textContent = PANELS[panel].title;
+  document.getElementById('panel-sub').textContent   = PANELS[panel].sub;
+  loadPanel(panel);
+}
+
+function refreshCurrent() { loadPanel(currentPanel); }
+
+function loadPanel(panel) {
+  const loaders = {
+    overview:      loadOverview,
+    safety:        loadSafety,
+    backlog:       loadBacklog,
+    users:         loadUsers,
+    relationships: loadRelationships,
+    crisis:        loadCrisis,
+    'ai-audit':    loadAudit,
+    erasure:       loadErasure,
+    logs:          loadLogs,
+  };
+  if (loaders[panel]) loaders[panel]();
+  setLastRefresh();
+}
+
+function setLastRefresh() {
+  document.getElementById('last-refresh').textContent =
+    'Updated ' + new Date().toLocaleTimeString();
+}
+
+// ── API HELPERS ─────────────────────────────────────────────
+async function api(path) {
+  const r = await fetch('/admin' + path, { credentials: 'same-origin' });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+async function apiPost(path, body) {
+  const r = await fetch('/admin' + path, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) {
+    const e = await r.json().catch(() => ({}));
+    throw new Error(e.error || `HTTP ${r.status}`);
+  }
+  return r.json();
+}
+
+// ── TOAST ───────────────────────────────────────────────────
+let toastTimer;
+function toast(msg, type = '') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'show ' + type;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.className = ''; }, 3200);
+}
+
+// ── MODAL ───────────────────────────────────────────────────
+function openModal(id)  { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+// ── OVERVIEW ────────────────────────────────────────────────
+async function loadOverview() {
+  const grid = document.getElementById('stat-grid');
+  grid.innerHTML = '<div class="loading"><div class="spinner"></div> Loading…</div>';
+  try {
+    const d = await api('/api/stats');
+    const { users, capsules, safety, compliance } = d;
+
+    const cards = [
+      { label: 'Active Clients',    value: users.total_clients,         sub: `+${users.new_this_week} this week`, cls: '' },
+      { label: 'Active Therapists', value: users.total_therapists,      sub: `${users.unverified_therapists} unverified`, cls: users.unverified_therapists > 0 ? 'amber' : '' },
+      { label: 'Relationships',     value: users.active_relationships,  sub: 'Active pairings', cls: '' },
+      { label: 'Open Capsules',     value: capsules.open,               sub: `${capsules.sealed} sealed`, cls: '' },
+      { label: 'CRITICAL Unrev.',   value: safety.critical_unreviewed,  sub: 'Need therapist review', cls: safety.critical_unreviewed > 0 ? 'red' : 'green' },
+      { label: 'HIGH Unrev.',       value: safety.high_unreviewed,      sub: 'Need therapist review', cls: safety.high_unreviewed > 0 ? 'amber' : 'green' },
+      { label: 'Crisis (30d)',       value: safety.crisis_this_month,    sub: `${safety.high_severity_crisis} high-severity`, cls: safety.high_severity_crisis > 0 ? 'amber' : '' },
+      { label: 'Erasure Queue',     value: compliance.pending_erasure_requests, sub: 'Pending GDPR requests', cls: compliance.pending_erasure_requests > 0 ? 'amber' : '' },
+    ];
+
+    // Update sidebar badges
+    setBadge('badge-safety', safety.critical_unreviewed + safety.high_unreviewed);
+    setBadge('badge-erasure', compliance.pending_erasure_requests);
+
+    grid.innerHTML = cards.map(c => `
+      <div class="stat-card ${c.cls}">
+        <div class="stat-label">${c.label}</div>
+        <div class="stat-value">${c.value ?? '—'}</div>
+        <div class="stat-sub">${c.sub}</div>
+      </div>`).join('');
+  } catch(e) {
+    grid.innerHTML = `<div class="loading">Failed to load stats</div>`;
+  }
+}
+
+function setBadge(id, count) {
+  const el = document.getElementById(id);
+  if (count > 0) { el.style.display = ''; el.textContent = count; }
+  else { el.style.display = 'none'; }
+}
+
+// ── SAFETY ALERTS ────────────────────────────────────────────
+async function loadSafety() {
+  const wrap = document.getElementById('safety-table');
+  wrap.innerHTML = '<div class="loading"><div class="spinner"></div> Loading…</div>';
+  const reviewed = document.getElementById('safety-reviewed').value;
+  const level    = document.getElementById('safety-level').value;
+
+  let qs = '';
+  if (reviewed) qs += `&reviewed=${reviewed}`;
+  if (level)    qs += `&level=${level}`;
+
+  try {
+    const d = await api('/api/safety-alerts?' + qs.slice(1));
+    if (!d.alerts.length) { wrap.innerHTML = emptyTable('No alerts match these filters'); return; }
+
+    wrap.innerHTML = `<table>
+      <thead><tr>
+        <th>Priority</th><th>Client</th><th>Therapist</th>
+        <th>Score</th><th>Status</th><th>Reviewed</th><th>Analyzed</th>
+      </tr></thead>
+      <tbody>${d.alerts.map(a => `
+        <tr>
+          <td>${levelBadge(a.priority_level)}</td>
+          <td>${esc(a.client_name)}<br><span style="color:var(--muted);font-size:11px">ID ${a.client_id}</span></td>
+          <td>${esc(a.therapist_name)}</td>
+          <td>
+            <div class="score-bar-wrap">
+              <div class="score-bar">
+                <div class="score-bar-fill ${a.priority_level === 'CRITICAL' ? 'critical' : 'high'}"
+                     style="width:${Math.round(a.priority_score * 100)}%"></div>
+              </div>
+              <span style="font-family:var(--mono);font-size:11px">${(a.priority_score * 100).toFixed(0)}%</span>
+            </div>
+          </td>
+          <td>${statusBadge(a.status)}</td>
+          <td>${a.reviewed
+            ? '<span class="badge badge-green">✓ Yes</span>'
+            : '<span class="badge badge-red">✗ No</span>'}</td>
+          <td style="font-family:var(--mono);font-size:11px;color:var(--muted)">${fmtDate(a.analyzed_at)}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+  } catch(e) {
+    wrap.innerHTML = `<div class="loading">Failed to load</div>`;
+  }
+}
+
+// ── NOTIFICATION BACKLOG ─────────────────────────────────────
+async function loadBacklog() {
+  const wrap = document.getElementById('backlog-table');
+  wrap.innerHTML = '<div class="loading"><div class="spinner"></div> Loading…</div>';
+  try {
+    const d = await api('/api/notification-backlog');
+    setBadge('badge-backlog', d.total);
+
+    if (!d.backlog.length) {
+      wrap.innerHTML = emptyTable('No unread crisis notifications — all clear');
+      return;
+    }
+
+    wrap.innerHTML = `<table>
+      <thead><tr>
+        <th></th><th>Therapist</th><th>Email</th>
+        <th>Unread Alerts</th><th>Oldest Waiting</th><th>Hours</th>
+      </tr></thead>
+      <tbody>${d.backlog.map(b => `
+        <tr>
+          <td>${b.is_urgent ? '<span class="urgent-dot" title="Urgent — over 24h"></span>' : ''}</td>
+          <td>${esc(b.therapist_name)}</td>
+          <td style="font-family:var(--mono);font-size:11px">${esc(b.email)}</td>
+          <td><span class="badge ${b.unread_count >= 3 ? 'badge-red' : 'badge-amber'}">${b.unread_count}</span></td>
+          <td style="font-family:var(--mono);font-size:11px;color:var(--muted)">${fmtDate(b.oldest_unread_at)}</td>
+          <td style="font-family:var(--mono);font-size:12px;color:${b.is_urgent ? 'var(--red)' : 'var(--amber)'}">${b.hours_waiting}h</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+  } catch(e) {
+    wrap.innerHTML = `<div class="loading">Failed to load</div>`;
+  }
+}
+
+// ── USERS ────────────────────────────────────────────────────
+let userTimer;
+async function loadUsers() {
+  clearTimeout(userTimer);
+  userTimer = setTimeout(_loadUsers, 300);
+}
+
+async function _loadUsers() {
+  const wrap    = document.getElementById('users-table');
+  wrap.innerHTML = '<div class="loading"><div class="spinner"></div> Loading…</div>';
+  const search   = document.getElementById('user-search').value.trim();
+  const type     = document.getElementById('user-type').value;
+  const active   = document.getElementById('user-active').value;
+  const verified = document.getElementById('user-verified').value;
+
+  let qs = new URLSearchParams();
+  if (search)   qs.set('search', search);
+  if (type)     qs.set('user_type', type);
+  if (active)   qs.set('is_active', active);
+  if (verified) qs.set('is_verified', verified);
+
+  try {
+    const d = await api('/api/users?' + qs.toString());
+
+    if (!d.users.length) { wrap.innerHTML = emptyTable('No users match these filters'); return; }
+
+    wrap.innerHTML = `<table>
+      <thead><tr>
+        <th>Name</th><th>Email</th><th>Type</th>
+        <th>Status</th><th>Verified</th><th>Extra</th><th>Joined</th><th>Actions</th>
+      </tr></thead>
+      <tbody>${d.users.map(u => {
+        const extraKey = u.user_type === 'therapist' ? 'active_clients' : 'total_capsules';
+        const extraLabel = u.user_type === 'therapist' ? 'clients' : 'capsules';
+        return `<tr>
+          <td>${esc(u.full_name)}</td>
+          <td style="font-family:var(--mono);font-size:11px">${esc(u.email)}</td>
+          <td>${typeBadge(u.user_type)}</td>
+          <td>${u.is_active
+            ? '<span class="badge badge-green">Active</span>'
+            : '<span class="badge badge-muted">Inactive</span>'}</td>
+          <td>${u.is_verified
+            ? '<span class="badge badge-accent">✓</span>'
+            : '<span class="badge badge-muted">—</span>'}</td>
+          <td style="font-family:var(--mono);font-size:11px">${u[extraKey] ?? 0} ${extraLabel}</td>
+          <td style="font-family:var(--mono);font-size:11px;color:var(--muted)">${fmtDate(u.created_at)}</td>
+          <td style="display:flex;gap:6px;flex-wrap:wrap">
+            <button class="btn btn-ghost" onclick="toggleUser(${u.user_id}, '${u.full_name.replace(/'/g,"\\'")}')">${u.is_active ? 'Deactivate' : 'Activate'}</button>
+            ${!u.is_verified && u.user_type === 'therapist'
+              ? `<button class="btn btn-accent" onclick="verifyTherapist(${u.user_id})">Verify</button>`
+              : ''}
+          </td>
+        </tr>`;
+      }).join('')}
+      </tbody>
+    </table>`;
+  } catch(e) {
+    wrap.innerHTML = `<div class="loading">Failed to load</div>`;
+  }
+}
+
+async function toggleUser(id, name) {
+  if (!confirm(`Toggle active status for ${name}?`)) return;
+  try {
+    const d = await apiPost(`/api/users/${id}/toggle-active`, {});
+    toast(d.message, 'ok');
+    loadUsers();
+  } catch(e) { toast(e.message, 'err'); }
+}
+
+async function verifyTherapist(id) {
+  if (!confirm('Verify this therapist? This notifies them and allows them to accept clients.')) return;
+  try {
+    const d = await apiPost(`/api/users/${id}/verify`, {});
+    toast(d.message, 'ok');
+    loadUsers();
+  } catch(e) { toast(e.message, 'err'); }
+}
+
+// ── RELATIONSHIPS ────────────────────────────────────────────
+async function loadRelationships() {
+  const wrap = document.getElementById('rel-table');
+  wrap.innerHTML = '<div class="loading"><div class="spinner"></div> Loading…</div>';
+  const status = document.getElementById('rel-status').value;
+  try {
+    const d = await api(`/api/relationships?status=${status}`);
+    if (!d.relationships.length) { wrap.innerHTML = emptyTable('No relationships found'); return; }
+
+    wrap.innerHTML = `<table>
+      <thead><tr>
+        <th>Client</th><th>Therapist</th><th>Status</th>
+        <th>Capsules</th><th>Started</th><th>Actions</th>
+      </tr></thead>
+      <tbody>${d.relationships.map(r => `<tr>
+        <td>${esc(r.client_name)}<br><span style="color:var(--muted);font-size:11px">ID ${r.client_id}</span></td>
+        <td>${esc(r.therapist_name)}</td>
+        <td>${statusBadge(r.status)}</td>
+        <td style="font-family:var(--mono);font-size:11px">${r.capsule_count}</td>
+        <td style="font-family:var(--mono);font-size:11px;color:var(--muted)">${fmtDate(r.start_date)}</td>
+        <td>${r.status === 'active'
+          ? `<button class="btn btn-red" onclick="openDissolve(${r.relationship_id})">Dissolve</button>`
+          : '<span style="color:var(--muted);font-size:11px">—</span>'}</td>
+      </tr>`).join('')}
+      </tbody>
+    </table>`;
+  } catch(e) {
+    wrap.innerHTML = `<div class="loading">Failed to load</div>`;
+  }
+}
+
+function openDissolve(relId) {
+  dissolveRelId = relId;
+  document.getElementById('dissolve-reason').value = '';
+  openModal('modal-dissolve');
+}
+
+async function confirmDissolve() {
+  const reason = document.getElementById('dissolve-reason').value.trim();
+  if (!reason) { toast('Please enter a reason', 'err'); return; }
+  try {
+    const d = await apiPost(`/api/relationships/${dissolveRelId}/dissolve`, { reason });
+    toast(d.message, 'ok');
+    closeModal('modal-dissolve');
+    loadRelationships();
+  } catch(e) { toast(e.message, 'err'); }
+}
+
+// ── CRISIS ───────────────────────────────────────────────────
+async function loadCrisis() {
+  const wrap = document.getElementById('crisis-table');
+  wrap.innerHTML = '<div class="loading"><div class="spinner"></div> Loading…</div>';
+  const sev  = document.getElementById('crisis-severity').value;
+  const days = document.getElementById('crisis-days').value;
+  try {
+    const d = await api(`/api/crisis-events?severity_min=${sev}&days=${days}`);
+    if (!d.events.length) { wrap.innerHTML = emptyTable('No crisis events in this period'); return; }
+
+    wrap.innerHTML = `<table>
+      <thead><tr>
+        <th>Client</th><th>Type</th><th>Severity</th>
+        <th>Status</th><th>Therapist Notified</th><th>Date</th>
+      </tr></thead>
+      <tbody>${d.events.map(e => `<tr>
+        <td>${esc(e.client_name)}<br><span style="color:var(--muted);font-size:11px">ID ${e.client_id}</span></td>
+        <td style="font-family:var(--mono);font-size:11px">${e.crisis_type.replace(/_/g,' ')}</td>
+        <td><span class="badge ${e.severity_level >= 8 ? 'badge-red' : e.severity_level >= 5 ? 'badge-amber' : 'badge-muted'}">${e.severity_level}/10</span></td>
+        <td>${statusBadge(e.status)}</td>
+        <td>${e.therapist_notified
+          ? '<span class="badge badge-green">✓ Yes</span>'
+          : '<span class="badge badge-red">✗ No</span>'}</td>
+        <td style="font-family:var(--mono);font-size:11px;color:var(--muted)">${fmtDate(e.created_at)}</td>
+      </tr>`).join('')}
+      </tbody>
+    </table>`;
+  } catch(e) {
+    wrap.innerHTML = `<div class="loading">Failed to load</div>`;
+  }
+}
+
+// ── AI AUDIT ─────────────────────────────────────────────────
+async function loadAudit() {
+  const wrap = document.getElementById('audit-table');
+  wrap.innerHTML = '<div class="loading"><div class="spinner"></div> Loading…</div>';
+  try {
+    const d = await api('/api/ai-audit');
+    if (!d.audit.length) { wrap.innerHTML = emptyTable('No flagged capsules'); return; }
+
+    wrap.innerHTML = `<table>
+      <thead><tr>
+        <th>Priority</th><th>Capsule</th><th>Client</th><th>Therapist</th>
+        <th>Score</th><th>Reviewed</th><th>Analyzed</th>
+      </tr></thead>
+      <tbody>${d.audit.map(a => `<tr>
+        <td>${levelBadge(a.priority_level)}</td>
+        <td>${esc(a.title || '(untitled)')}<br>
+          <span style="color:var(--muted);font-size:10px;font-family:var(--mono)">${(a.risk_flags || []).slice(0,2).join(', ')}</span></td>
+        <td>${esc(a.client_name)}</td>
+        <td>${esc(a.therapist_name)}</td>
+        <td>
+          <div class="score-bar-wrap">
+            <div class="score-bar">
+              <div class="score-bar-fill ${a.priority_level === 'CRITICAL' ? 'critical' : 'high'}"
+                   style="width:${Math.round(a.priority_score * 100)}%"></div>
+            </div>
+            <span style="font-family:var(--mono);font-size:11px">${(a.priority_score * 100).toFixed(0)}%</span>
+          </div>
+        </td>
+        <td>${a.reviewed
+          ? '<span class="badge badge-green">✓</span>'
+          : '<span class="badge badge-red">✗</span>'}</td>
+        <td style="font-family:var(--mono);font-size:11px;color:var(--muted)">${fmtDate(a.analyzed_at)}</td>
+      </tr>`).join('')}
+      </tbody>
+    </table>`;
+  } catch(e) {
+    wrap.innerHTML = `<div class="loading">Failed to load</div>`;
+  }
+}
+
+// ── ERASURE REQUESTS ─────────────────────────────────────────
+async function loadErasure() {
+  const wrap   = document.getElementById('erasure-table');
+  wrap.innerHTML = '<div class="loading"><div class="spinner"></div> Loading…</div>';
+  const status = document.getElementById('erasure-status').value;
+  try {
+    const d = await api(`/api/erasure-requests?status=${status}`);
+    setBadge('badge-erasure', d.requests.filter(r => r.status === 'pending').length);
+
+    if (!d.requests.length) { wrap.innerHTML = emptyTable('No requests in this status'); return; }
+
+    wrap.innerHTML = `<table>
+      <thead><tr>
+        <th>User</th><th>Reason</th><th>Status</th>
+        <th>Submitted</th><th>Reviewed</th><th>Actions</th>
+      </tr></thead>
+      <tbody>${d.requests.map(r => `<tr>
+        <td>${esc(r.user)}</td>
+        <td style="max-width:200px;color:var(--muted);font-size:12px">${esc(r.reason || '—')}</td>
+        <td>${erasureStatusBadge(r.status)}</td>
+        <td style="font-family:var(--mono);font-size:11px;color:var(--muted)">${fmtDate(r.requested_at)}</td>
+        <td style="font-family:var(--mono);font-size:11px;color:var(--muted)">${fmtDate(r.reviewed_at)}</td>
+        <td>${r.status === 'pending'
+          ? `<button class="btn btn-accent" onclick="openErasureModal(${r.request_id}, '${esc(r.user)}')">Review</button>`
+          : `<span style="color:var(--muted);font-size:11px">${r.notes || '—'}</span>`}</td>
+      </tr>`).join('')}
+      </tbody>
+    </table>`;
+  } catch(e) {
+    wrap.innerHTML = `<div class="loading">Failed to load</div>`;
+  }
+}
+
+function openErasureModal(reqId, userName) {
+  erasureReqId = reqId;
+  document.getElementById('erasure-modal-title').textContent = `Review Erasure — ${userName}`;
+  document.getElementById('erasure-modal-info').textContent =
+    'Approving will anonymize this user\'s PII (name, email, phone, DOB). ' +
+    'Clinical records (capsules, messages) are retained per legal obligations. ' +
+    'This action cannot be undone.';
+  document.getElementById('erasure-notes').value = '';
+  openModal('modal-erasure');
+}
+
+async function confirmErasure(action) {
+  const notes = document.getElementById('erasure-notes').value.trim();
+  try {
+    const d = await apiPost(`/api/erasure-requests/${erasureReqId}/action`, { action, notes });
+    toast(d.message, 'ok');
+    closeModal('modal-erasure');
+    loadErasure();
+    loadOverview(); // refresh stats
+  } catch(e) { toast(e.message, 'err'); }
+}
+
+// ── ACTIVITY LOGS ────────────────────────────────────────────
+async function loadLogs() {
+  const wrap   = document.getElementById('logs-table');
+  wrap.innerHTML = '<div class="loading"><div class="spinner"></div> Loading…</div>';
+  const userId = document.getElementById('log-user').value.trim();
+  const action = document.getElementById('log-action').value.trim();
+  const days   = document.getElementById('log-days').value;
+
+  let qs = new URLSearchParams({ days });
+  if (userId) qs.set('user_id', userId);
+  if (action) qs.set('action_type', action);
+
+  try {
+    const d = await api('/api/activity-logs?' + qs.toString());
+    if (!d.logs.length) { wrap.innerHTML = emptyTable('No logs match these filters'); return; }
+
+    wrap.innerHTML = `<table>
+      <thead><tr>
+        <th>User</th><th>Action</th><th>Description</th><th>IP</th><th>Time</th>
+      </tr></thead>
+      <tbody>${d.logs.map(l => `<tr>
+        <td style="font-size:12px">${esc(l.user)}</td>
+        <td><span class="badge badge-muted" style="font-size:10px">${esc(l.action_type || '—')}</span></td>
+        <td style="color:var(--muted);font-size:12px;max-width:280px">${esc(l.description || '—')}</td>
+        <td style="font-family:var(--mono);font-size:10px;color:var(--muted)">${l.ip_address || '—'}</td>
+        <td style="font-family:var(--mono);font-size:11px;color:var(--muted)">${fmtDate(l.created_at)}</td>
+      </tr>`).join('')}
+      </tbody>
+    </table>`;
+  } catch(e) {
+    wrap.innerHTML = `<div class="loading">Failed to load</div>`;
+  }
+}
+
+// ── HELPERS ──────────────────────────────────────────────────
+function esc(s) {
+  if (s == null) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function fmtDate(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' })
+    + ' ' + d.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
+}
+
+function levelBadge(level) {
+  const cls = { CRITICAL: 'badge-red', HIGH: 'badge-amber', MEDIUM: 'badge-accent', LOW: 'badge-muted' };
+  return `<span class="badge ${cls[level] || 'badge-muted'}">${level}</span>`;
+}
+
+function statusBadge(s) {
+  const cls = { open:'badge-accent', sealed:'badge-muted', active:'badge-green',
+                resolved:'badge-green', logged:'badge-muted', in_progress:'badge-amber',
+                escalated:'badge-red', ended:'badge-muted' };
+  return `<span class="badge ${cls[s] || 'badge-muted'}">${s}</span>`;
+}
+
+function erasureStatusBadge(s) {
+  const cls = { pending:'badge-amber', approved:'badge-green', completed:'badge-green', rejected:'badge-muted' };
+  return `<span class="badge ${cls[s] || 'badge-muted'}">${s}</span>`;
+}
+
+function typeBadge(t) {
+  return t === 'therapist'
+    ? '<span class="badge badge-accent">Therapist</span>'
+    : '<span class="badge badge-muted">Client</span>';
+}
+
+function emptyTable(msg) {
+  return `<table><tbody><tr class="empty-row"><td colspan="10">${msg}</td></tr></tbody></table>`;
+}
+
+// ── LOGOUT ───────────────────────────────────────────────────
+function handleLogout() {
+  openModal('modal-logout');
+}
+
+async function confirmLogout() {
+  try {
+    await apiPost('/logout', {});
+  } catch(e) {
+    // Even if the request fails, redirect — session may already be gone
+  }
+  window.location.href = '/auth/login';
+}
+
+// ── BOOT ─────────────────────────────────────────────────────
+loadOverview();
+</script>
+</body>
+</html>

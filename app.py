@@ -70,12 +70,17 @@ def create_app():
     from blueprints.therapist import therapist_bp
     from blueprints.messaging import messaging_bp
     from blueprints.crisis import crisis_bp
+    from blueprints.legal import legal_bp
+    from blueprints.admin import admin_bp
+
 
     app.register_blueprint(auth_bp, url_prefix='/auth')
     app.register_blueprint(client_bp, url_prefix='/client')
     app.register_blueprint(therapist_bp, url_prefix='/therapist')
     app.register_blueprint(messaging_bp, url_prefix='/messaging')
     app.register_blueprint(crisis_bp, url_prefix='/crisis')
+    app.register_blueprint(legal_bp, url_prefix='/legal')
+    app.register_blueprint(admin_bp, url_prefix='/admin')
 
     # Register CLI commands
     register_commands(app)
@@ -132,7 +137,41 @@ def register_commands(app):
         db.create_all()
         click.echo('✓ Database reset successfully!')
 
+    @app.cli.command('seed-admin')
+    def seed_admin():
+        from models import User
+        """Seed a superuser/admin account from .env credentials."""
+        import bcrypt
 
+        email = os.getenv('ADMIN_EMAIL')
+        password = os.getenv('ADMIN_PASSWORD')
+        first_name = os.getenv('ADMIN_FIRST_NAME', 'Admin')
+        last_name = os.getenv('ADMIN_LAST_NAME', 'User')
+
+        if not email or not password:
+            click.echo('❌ ADMIN_EMAIL and ADMIN_PASSWORD must be set in .env')
+            return
+
+        existing = User.query.filter_by(email=email).first()
+        if existing:
+            click.echo(f'⚠️  Admin user already exists: {email}')
+            return
+
+        # Hash with bcrypt to match auth.py's verify_password
+        password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+        admin = User(
+            email=email,
+            password_hash=password_hash,
+            user_type='admin',
+            first_name=first_name,
+            last_name=last_name,
+            is_verified=True,
+            is_active=True,
+        )
+        db.session.add(admin)
+        db.session.commit()
+        click.echo(f'✅ Admin user created: {email}')
 if __name__ == '__main__':
     app = create_app()
 

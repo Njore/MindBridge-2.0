@@ -33,33 +33,173 @@
     </div>
 
     {% if session.user_type == 'client' %}
+
+    <!-- ── GDPR: Right to Erasure ─────────────────────────────── -->
+    <div class="card" id="erasure-section">
+        <h3>🗂️ Data Erasure Request</h3>
+        <p style="margin: 0.75rem 0; color: var(--text-muted);">
+            Under the <strong>Kenya Data Protection Act (2019)</strong> and similar privacy laws, you have the
+            right to request deletion of your personal data. Requests are reviewed by our team within
+            <strong>30 days</strong>.
+        </p>
+        <p style="margin-bottom: 1.25rem; color: var(--text-muted); font-size: 0.9rem;">
+            ⚠️ Note: Clinical records (capsules, messages) may be retained as required by applicable law
+            even after your erasure request is approved.
+        </p>
+
+        <!-- Status banner — shown after checking -->
+        <div id="erasure-status-banner" style="display:none;" class="alert"></div>
+
+        <!-- Request form — hidden once a pending request exists -->
+        <div id="erasure-form-wrap">
+            <div class="form-group">
+                <label for="erasure-reason">Reason (optional)</label>
+                <textarea
+                    id="erasure-reason"
+                    class="form-control"
+                    placeholder="e.g. I no longer wish to use the service..."
+                    rows="3"
+                ></textarea>
+            </div>
+            <button onclick="submitErasureRequest()" class="btn btn-outline" id="erasure-submit-btn">
+                📤 Submit Erasure Request
+            </button>
+        </div>
+
+        <!-- Check existing status -->
+        <p style="margin-top: 1rem; font-size: 0.85rem;">
+            <a href="#" onclick="checkErasureStatus(event)" style="color: var(--primary);">
+                Check status of an existing request →
+            </a>
+        </p>
+    </div>
+
+    <!-- ── Danger Zone ────────────────────────────────────────── -->
     <div class="card">
         <h3 style="color: var(--danger);">⚠️ Danger Zone</h3>
-        <p style="margin: 1rem 0;">Deleting your account is permanent and cannot be undone. All your data will be removed within 30 days.</p>
+        <p style="margin: 1rem 0;">
+            Deleting your account is permanent and cannot be undone.
+            All your data will be removed within 30 days.
+        </p>
         <button onclick="deleteAccount()" class="btn btn-danger">Delete My Account</button>
     </div>
+
     {% endif %}
 </div>
 
 <script>
+// ── Erasure request ─────────────────────────────────────────────
+
+function submitErasureRequest() {
+    const reason  = document.getElementById('erasure-reason').value.trim();
+    const btn     = document.getElementById('erasure-submit-btn');
+    const banner  = document.getElementById('erasure-status-banner');
+
+    if (!confirm(
+        'Are you sure you want to submit a data erasure request?\n\n' +
+        'Our team will review it within 30 days. ' +
+        'Clinical records may still be retained as required by law.'
+    )) return;
+
+    btn.disabled   = true;
+    btn.textContent = 'Submitting…';
+
+    fetch('/auth/account/request-erasure', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ reason: reason || null })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.request_id) {
+            // Success
+            showBanner(
+                'success',
+                `✅ ${data.message} (Request ID: ${data.request_id})`
+            );
+            document.getElementById('erasure-form-wrap').style.display = 'none';
+        } else {
+            // e.g. duplicate pending request
+            showBanner('warning', `⚠️ ${data.error || 'Something went wrong.'}`);
+            btn.disabled    = false;
+            btn.textContent = '📤 Submit Erasure Request';
+        }
+    })
+    .catch(() => {
+        showBanner('danger', '❌ Network error — please try again.');
+        btn.disabled    = false;
+        btn.textContent = '📤 Submit Erasure Request';
+    });
+}
+
+function checkErasureStatus(e) {
+    e.preventDefault();
+
+    fetch('/auth/account/erasure-status')
+        .then(r => r.json())
+        .then(data => {
+            const req = data.request;
+            if (!req) {
+                showBanner('warning', 'ℹ️ You have no erasure requests on file.');
+                return;
+            }
+
+            const statusEmoji = {
+                pending:   '⏳',
+                approved:  '✅',
+                completed: '✅',
+                rejected:  '❌'
+            }[req.status] || '•';
+
+            let msg = `${statusEmoji} Erasure request <strong>#${req.request_id}</strong> —
+                       Status: <strong>${req.status}</strong>
+                       (submitted ${new Date(req.submitted_at).toLocaleDateString()})`;
+
+            if (req.status === 'rejected' && req.notes) {
+                msg += `<br><em>Note: ${req.notes}</em>`;
+            }
+            if (req.reviewed_at) {
+                msg += `<br>Reviewed on ${new Date(req.reviewed_at).toLocaleDateString()}`;
+            }
+
+            const alertType = ['approved','completed'].includes(req.status)
+                ? 'success'
+                : req.status === 'rejected' ? 'danger' : 'warning';
+
+            showBanner(alertType, msg);
+
+            // Hide the form if there's already a pending request
+            if (req.status === 'pending') {
+                document.getElementById('erasure-form-wrap').style.display = 'none';
+            }
+        })
+        .catch(() => showBanner('danger', '❌ Could not retrieve status — please try again.'));
+}
+
+function showBanner(type, html) {
+    const banner = document.getElementById('erasure-status-banner');
+    banner.className  = `alert alert-${type}`;
+    banner.innerHTML  = html;
+    banner.style.display = 'block';
+    banner.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// ── Account deletion ────────────────────────────────────────────
+
 function deleteAccount() {
     if (!confirm('Are you absolutely sure you want to delete your account? This action cannot be undone.')) {
         return;
     }
-    
+
     const password = prompt('Please enter your password to confirm account deletion:');
-    if (!password) {
-        return;
-    }
-    
+    if (!password) return;
+
     fetch('/client/account/delete', {
-        method: 'DELETE',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ password: password })
+        method:  'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ password })
     })
-    .then(response => response.json())
+    .then(r => r.json())
     .then(data => {
         if (data.message) {
             alert(data.message);
@@ -68,9 +208,7 @@ function deleteAccount() {
             alert('Error: ' + (data.error || 'Unknown error'));
         }
     })
-    .catch(error => {
-        alert('Error deleting account: ' + error);
-    });
+    .catch(err => alert('Error deleting account: ' + err));
 }
 </script>
 {% endblock %}

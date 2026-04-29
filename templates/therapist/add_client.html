@@ -3,79 +3,91 @@
 {% block title %}Add Client — MindBridge{% endblock %}
 
 {% block content %}
-<div class="container py-5" style="max-width: 720px;">
+<div class="container py-5" style="max-width: 640px;">
 
   <!-- Header -->
-  <div class="d-flex align-items-center mb-4 gap-3">
-    <a href="/therapist/clients" class="btn btn-outline-secondary btn-sm">
-      ← Back to Clients
-    </a>
-    <h2 class="mb-0">Connect a Client</h2>
+  <div style="display:flex;align-items:center;gap:1rem;margin-bottom:2rem;">
+    <a href="/therapist/clients" class="btn btn-outline" style="font-size:0.85rem;padding:0.4rem 0.9rem;">← Back</a>
+    <div>
+      <h2 style="margin:0;">Connect a Client</h2>
+      <p style="margin:0;color:var(--text-muted);font-size:0.9rem;">Search, select, and confirm in one go</p>
+    </div>
   </div>
 
   <!-- Alert area -->
   <div id="alert-area"></div>
 
-  <!-- Search card -->
-  <div class="card shadow-sm mb-4">
-    <div class="card-body">
-      <h5 class="card-title mb-1">Search by name or email</h5>
-      <p class="text-muted small mb-3">
-        The client must already have a MindBridge account registered as a <strong>client</strong>.
-      </p>
-
-      <div class="input-group">
-        <input
-          type="text"
-          id="search-input"
-          class="form-control"
-          placeholder="e.g. jane.doe@email.com or Jane"
-          autocomplete="off"
-        />
-        <button class="btn btn-primary" id="search-btn" type="button">
-          <span id="search-spinner" class="spinner-border spinner-border-sm d-none me-1"></span>
-          Search
-        </button>
+  <!-- ── STEP 1: Search ──────────────────────────────────────────────────── -->
+  <div class="card" style="margin-bottom:1rem;">
+    <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1rem;">
+      <div style="width:28px;height:28px;border-radius:50%;background:var(--primary);color:white;font-weight:700;font-size:0.85rem;display:flex;align-items:center;justify-content:center;flex-shrink:0;">1</div>
+      <div>
+        <div style="font-weight:600;">Find your client</div>
+        <div style="font-size:0.8rem;color:var(--text-muted);">They must have a MindBridge <strong>client</strong> account</div>
       </div>
-      <div class="form-text">Enter at least 2 characters.</div>
+    </div>
+
+    <div style="display:flex;gap:0.5rem;">
+      <input
+        type="text"
+        id="search-input"
+        class="form-control"
+        placeholder="Name or email…"
+        autocomplete="off"
+        style="flex:1;"
+      />
+      <button class="btn btn-primary" id="search-btn" type="button" style="white-space:nowrap;">
+        <span id="search-spinner" style="display:none;">⏳</span>
+        Search
+      </button>
     </div>
   </div>
 
-  <!-- Results -->
-  <div id="results-area"></div>
-
-  <!-- Connect modal -->
-  <div class="modal fade" id="connectModal" tabindex="-1" aria-labelledby="connectModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title" id="connectModalLabel">Confirm Connection</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-        </div>
-        <div class="modal-body">
-          <p>You are about to connect with:</p>
-          <p class="fw-bold fs-5 mb-1" id="modal-client-name"></p>
-          <p class="text-muted small mb-3" id="modal-client-email"></p>
-
-          <label for="modal-goals" class="form-label">
-            Client goals <span class="text-muted fw-normal">(optional)</span>
-          </label>
-          <textarea
-            id="modal-goals"
-            class="form-control"
-            rows="3"
-            placeholder="e.g. Manage anxiety, improve sleep quality…"
-          ></textarea>
-          <input type="hidden" id="modal-client-id" />
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button type="button" class="btn btn-primary" id="confirm-connect-btn">
-            <span id="connect-spinner" class="spinner-border spinner-border-sm d-none me-1"></span>
-            Connect Client
-          </button>
-        </div>
+  <!-- ── STEP 2: Results (shown after search) ───────────────────────────── -->
+  <div id="results-section" style="display:none;">
+    <div class="card" style="margin-bottom:1rem;">
+      <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1rem;">
+        <div style="width:28px;height:28px;border-radius:50%;background:var(--primary);color:white;font-weight:700;font-size:0.85rem;display:flex;align-items:center;justify-content:center;flex-shrink:0;">2</div>
+        <div style="font-weight:600;">Select a client</div>
       </div>
+      <div id="results-list"></div>
+    </div>
+  </div>
+
+  <!-- ── STEP 3: Goals + Confirm (shown after selecting) ───────────────── -->
+  <div id="confirm-section" style="display:none;">
+    <div class="card" style="border:2px solid var(--primary);margin-bottom:1rem;">
+      <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.25rem;">
+        <div style="width:28px;height:28px;border-radius:50%;background:var(--primary);color:white;font-weight:700;font-size:0.85rem;display:flex;align-items:center;justify-content:center;flex-shrink:0;">3</div>
+        <div style="font-weight:600;">Set goals & confirm</div>
+      </div>
+
+      <!-- Selected client pill -->
+      <div id="selected-client-pill" style="display:flex;align-items:center;justify-content:space-between;padding:0.75rem 1rem;background:var(#f6f4f9);border-radius:8px;margin-bottom:1.25rem;">
+        <div>
+          <div id="pill-name" style="font-weight:600;"></div>
+          <div id="pill-email" style="font-size:0.85rem;color:var(--text-muted);"></div>
+        </div>
+        <button onclick="clearSelection()" style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:1.1rem;" title="Change selection">✕</button>
+      </div>
+
+      <label style="font-weight:500;margin-bottom:0.4rem;display:block;">
+        Client goals <span style="color:var(--text-muted);font-weight:400;">(optional)</span>
+      </label>
+      <textarea
+        id="goals-input"
+        class="form-control"
+        rows="3"
+        placeholder="e.g. Manage anxiety, improve sleep quality…"
+        style="margin-bottom:1.25rem;resize:vertical;"
+      ></textarea>
+
+      <input type="hidden" id="selected-client-id" />
+
+      <button class="btn btn-primary" id="confirm-btn" style="width:100%;padding:0.75rem;font-size:1rem;">
+        <span id="confirm-spinner" style="display:none;">⏳</span>
+        Connect Client
+      </button>
     </div>
   </div>
 
@@ -84,135 +96,107 @@
 
 {% block scripts %}
 <script>
-  const searchInput  = document.getElementById('search-input');
-  const searchBtn    = document.getElementById('search-btn');
-  const searchSpinner = document.getElementById('search-spinner');
-  const resultsArea  = document.getElementById('results-area');
-  const alertArea    = document.getElementById('alert-area');
+document.addEventListener('DOMContentLoaded', () => {
+
+  const searchInput   = document.getElementById('search-input');
+  const searchBtn     = document.getElementById('search-btn');
+  const alertArea     = document.getElementById('alert-area');
 
   // ── Helpers ────────────────────────────────────────────────────────────────
-
   function showAlert(message, type = 'danger') {
     alertArea.innerHTML = `
-      <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+      <div class="alert alert-${type}" role="alert" style="margin-bottom:1rem;">
         ${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        <button onclick="this.parentElement.remove()" style="float:right;background:none;border:none;cursor:pointer;font-size:1.2rem;">&times;</button>
       </div>`;
   }
 
-  function clearAlert() {
-    alertArea.innerHTML = '';
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
   }
 
-  function setSearchLoading(on) {
-    searchSpinner.classList.toggle('d-none', !on);
-    searchBtn.disabled = on;
-    searchInput.disabled = on;
+  function setLoading(btnEl, spinnerId, on) {
+    document.getElementById(spinnerId).style.display = on ? 'inline' : 'none';
+    btnEl.disabled = on;
   }
 
-  // ── Search ─────────────────────────────────────────────────────────────────
-
+  // ── Step 1: Search ─────────────────────────────────────────────────────────
   async function doSearch() {
     const q = searchInput.value.trim();
-    if (q.length < 2) {
-      showAlert('Please enter at least 2 characters to search.');
-      return;
-    }
-    clearAlert();
-    setSearchLoading(true);
-    resultsArea.innerHTML = '';
+    if (q.length < 2) { showAlert('Enter at least 2 characters.'); return; }
+    alertArea.innerHTML = '';
+    setLoading(searchBtn, 'search-spinner', true);
 
     try {
       const resp = await fetch(`/therapist/api/clients/search?q=${encodeURIComponent(q)}`);
       const data = await resp.json();
-
-      if (!resp.ok) {
-        showAlert(data.error || 'Search failed.');
-        return;
-      }
-
-      if (data.results.length === 0) {
-        resultsArea.innerHTML = `
-          <div class="text-center text-muted py-4">
-            <i class="bi bi-person-x fs-1 d-block mb-2"></i>
-            No clients found for <strong>"${escapeHtml(q)}"</strong>.<br>
-            <span class="small">Make sure the client has registered an account.</span>
-          </div>`;
-        return;
-      }
-
-      renderResults(data.results);
-    } catch (err) {
+      if (!resp.ok) { showAlert(data.error || 'Search failed.'); return; }
+      renderResults(data.results, q);
+    } catch {
       showAlert('Network error. Please try again.');
     } finally {
-      setSearchLoading(false);
+      setLoading(searchBtn, 'search-spinner', false);
     }
   }
 
-  function renderResults(results) {
-    const rows = results.map(u => {
-      const badge = u.already_connected
-        ? `<span class="badge bg-success">Already connected</span>`
-        : '';
-      const btn = u.already_connected
-        ? `<button class="btn btn-sm btn-outline-secondary" disabled>Connected</button>`
-        : `<button class="btn btn-sm btn-primary" onclick="openConnectModal(${u.user_id}, '${escapeHtml(u.first_name)} ${escapeHtml(u.last_name)}', '${escapeHtml(u.email)}')">
-             Connect
-           </button>`;
+  // ── Step 2: Render results ─────────────────────────────────────────────────
+  function renderResults(results, q) {
+    const section = document.getElementById('results-section');
+    const list    = document.getElementById('results-list');
+    section.style.display = 'block';
+    clearSelection();
 
+    if (results.length === 0) {
+      list.innerHTML = `<p style="text-align:center;color:var(--text-muted);padding:1rem 0;">
+        No clients found for <strong>"${escapeHtml(q)}"</strong>. Make sure they've registered.
+      </p>`;
+      return;
+    }
+
+    list.innerHTML = results.map(u => {
+      const connected = u.already_connected;
       return `
-        <tr>
-          <td>
-            <div class="fw-semibold">${escapeHtml(u.first_name)} ${escapeHtml(u.last_name)}</div>
-            <div class="text-muted small">${escapeHtml(u.email)}</div>
-          </td>
-          <td class="align-middle">${badge}</td>
-          <td class="align-middle text-end">${btn}</td>
-        </tr>`;
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:0.85rem 0;border-bottom:1px solid var(--border);">
+          <div>
+            <div style="font-weight:600;">${escapeHtml(u.first_name)} ${escapeHtml(u.last_name)}</div>
+            <div style="font-size:0.85rem;color:var(--text-muted);">${escapeHtml(u.email)}</div>
+          </div>
+          ${connected
+            ? `<span style="color:var(--success,#22c55e);font-size:0.85rem;font-weight:500;">✓ Connected</span>`
+            : `<button class="btn btn-outline" style="font-size:0.85rem;padding:0.4rem 0.9rem;"
+                 onclick="selectClient(${u.user_id}, '${escapeHtml(u.first_name)} ${escapeHtml(u.last_name)}', '${escapeHtml(u.email)}')">
+                 Select →
+               </button>`
+          }
+        </div>`;
     }).join('');
-
-    resultsArea.innerHTML = `
-      <div class="card shadow-sm">
-        <div class="card-body p-0">
-          <table class="table table-hover mb-0 align-middle">
-            <thead class="table-light">
-              <tr>
-                <th>Client</th>
-                <th>Status</th>
-                <th class="text-end">Action</th>
-              </tr>
-            </thead>
-            <tbody>${rows}</tbody>
-          </table>
-        </div>
-      </div>`;
   }
 
-  // ── Connect modal ──────────────────────────────────────────────────────────
+  // ── Step 3: Select → show confirm ─────────────────────────────────────────
+  window.selectClient = function(id, name, email) {
+    document.getElementById('selected-client-id').value = id;
+    document.getElementById('pill-name').textContent    = name;
+    document.getElementById('pill-email').textContent   = email;
+    document.getElementById('goals-input').value        = '';
+    document.getElementById('confirm-section').style.display = 'block';
+    document.getElementById('confirm-section').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  };
 
-  let connectModal;
+  window.clearSelection = function() {
+    document.getElementById('confirm-section').style.display = 'none';
+    document.getElementById('selected-client-id').value = '';
+  };
 
-  document.addEventListener('DOMContentLoaded', () => {
-    connectModal = new bootstrap.Modal(document.getElementById('connectModal'));
-  });
+  // ── Confirm connect ────────────────────────────────────────────────────────
+  document.getElementById('confirm-btn').addEventListener('click', async () => {
+    const clientId = document.getElementById('selected-client-id').value;
+    const goals    = document.getElementById('goals-input').value.trim();
+    if (!clientId) return;
 
-  function openConnectModal(clientId, name, email) {
-    document.getElementById('modal-client-id').value  = clientId;
-    document.getElementById('modal-client-name').textContent  = name;
-    document.getElementById('modal-client-email').textContent = email;
-    document.getElementById('modal-goals').value = '';
-    clearAlert();
-    connectModal.show();
-  }
-
-  document.getElementById('confirm-connect-btn').addEventListener('click', async () => {
-    const clientId = document.getElementById('modal-client-id').value;
-    const goals    = document.getElementById('modal-goals').value.trim();
-    const spinner  = document.getElementById('connect-spinner');
-    const btn      = document.getElementById('confirm-connect-btn');
-
-    spinner.classList.remove('d-none');
-    btn.disabled = true;
+    const btn = document.getElementById('confirm-btn');
+    setLoading(btn, 'confirm-spinner', true);
 
     try {
       const resp = await fetch('/therapist/api/clients/connect', {
@@ -223,41 +207,23 @@
       const data = await resp.json();
 
       if (resp.ok) {
-        connectModal.hide();
-        showAlert(
-          `<strong>${escapeHtml(data.client.first_name)} ${escapeHtml(data.client.last_name)}</strong> has been connected successfully! 
-           <a href="/therapist/clients" class="alert-link ms-2">View all clients →</a>`,
-          'success'
-        );
-        // Refresh results so the button becomes disabled
-        doSearch();
+        showAlert(`<strong>${escapeHtml(data.client.first_name)} ${escapeHtml(data.client.last_name)}</strong> connected! <a href="/therapist/clients">View all clients →</a>`, 'success');
+        // Reset the whole form
+        searchInput.value = '';
+        document.getElementById('results-section').style.display = 'none';
+        clearSelection();
       } else {
-        connectModal.hide();
         showAlert(data.error || 'Connection failed.');
       }
-    } catch (err) {
-      connectModal.hide();
+    } catch {
       showAlert('Network error. Please try again.');
     } finally {
-      spinner.classList.add('d-none');
-      btn.disabled = false;
+      setLoading(btn, 'confirm-spinner', false);
     }
   });
 
-  // ── Event listeners ────────────────────────────────────────────────────────
-
   searchBtn.addEventListener('click', doSearch);
   searchInput.addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
-
-  // ── XSS safety ─────────────────────────────────────────────────────────────
-
-  function escapeHtml(str) {
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-  }
+});
 </script>
-{% endblock %}f
+{% endblock %}

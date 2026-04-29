@@ -43,7 +43,7 @@ mindbridge/
 │   ├── therapist.py            # Therapist functionality
 │   ├── messaging.py            # Secure messaging
 │   └── crisis.py               # Crisis management
-│
+│ 
 ├── templates/                  # Jinja2 templates
 │   ├── base.html               # Base template
 │   ├── index.html              # Landing page
@@ -119,8 +119,11 @@ mindbridge/
    
    # On macOS/Linux:
    source venv/bin/activate
+   
+   #On git bash
+   source .venv/Scripts/activate
    ```
-
+   
 3. **Install dependencies**
    ```bash
    pip install -r requirements.txt
