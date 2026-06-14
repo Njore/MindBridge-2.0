@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+
+{% block title %}{% if technique %}{{ technique.technique_name }}{% else %}Technique Not Found{% endif %} - MindBridge{% endblock %}
+
+{% block content %}
+<div class="container">
+  <div style="margin-bottom:1rem;">
+    <a href="/crisis/techniques" class="btn btn-outline" style="font-size:0.85rem;padding:0.4rem 0.8rem;">← Back to Techniques</a>
+  </div>
+
+  {% if technique %}
+  <div class="card">
+    <div class="card-header">
+      <h1>{{ technique.technique_name }}</h1>
+      <p style="color:var(--text-muted);">
+        <strong>Category:</strong> {{ technique.technique_category }}
+        {% if technique.estimated_duration_minutes %}
+          &middot; <strong>Duration:</strong> {{ technique.estimated_duration_minutes }} minutes
+        {% endif %}
+        {% if technique.difficulty_level %}
+          &middot; <strong>Difficulty:</strong> {{ technique.difficulty_level|capitalize }}
+        {% endif %}
+      </p>
+    </div>
+
+    {% if technique.description %}
+    <p>{{ technique.description }}</p>
+    {% endif %}
+
+    <h3 style="margin-top:1.5rem;">📋 Step-by-Step Instructions</h3>
+    {% if technique.step_by_step_instructions is iterable and technique.step_by_step_instructions is not string %}
+      <ol>
+        {% for step in technique.step_by_step_instructions %}
+        <li style="margin-bottom:0.5rem;">{{ step }}</li>
+        {% endfor %}
+      </ol>
+    {% else %}
+      <p style="white-space:pre-line;">{{ technique.step_by_step_instructions }}</p>
+    {% endif %}
+
+    {% if technique.best_for %}
+    <h3 style="margin-top:1.5rem;">✅ Best For</h3>
+    <p>
+      {% for tag in technique.best_for %}
+        <span style="display:inline-block;background:var(--bg-light);padding:0.2rem 0.6rem;border-radius:20px;font-size:0.85rem;margin-right:0.4rem;">{{ tag }}</span>
+      {% endfor %}
+    </p>
+    {% endif %}
+
+    {% if technique.audio_guide_url or technique.video_guide_url %}
+    <h3 style="margin-top:1.5rem;">🎧 Guided Resources</h3>
+    {% if technique.audio_guide_url %}
+    <p><a href="{{ technique.audio_guide_url }}" target="_blank" class="btn btn-outline">🔊 Audio Guide</a></p>
+    {% endif %}
+    {% if technique.video_guide_url %}
+    <p><a href="{{ technique.video_guide_url }}" target="_blank" class="btn btn-outline">▶️ Video Guide</a></p>
+    {% endif %}
+    {% endif %}
+
+    <div id="alert-area" style="margin-top:1.5rem;"></div>
+
+    <button id="log-usage-btn" class="btn btn-primary" style="margin-top:1rem;">✅ I used this technique</button>
+  </div>
+  {% else %}
+  <div class="card">
+    <h2>Technique not found</h2>
+    <p style="color:var(--text-muted);">This technique may have been removed or is no longer active.</p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% if technique %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const alertArea = document.getElementById('alert-area');
+  const btn = document.getElementById('log-usage-btn');
+
+  function showAlert(msg, type = 'success') {
+    alertArea.innerHTML = `<div class="alert alert-${type}">${msg}</div>`;
+  }
+
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    try {
+      const resp = await fetch(`/crisis/techniques/{{ technique.technique_id }}/use`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      const data = await resp.json();
+
+      if (resp.ok) {
+        showAlert('Logged — thanks for letting us know. 🌱', 'success');
+      } else {
+        showAlert(data.error || 'Could not log usage.', 'danger');
+        btn.disabled = false;
+      }
+    } catch (e) {
+      showAlert('Network error. Please try again.', 'danger');
+      btn.disabled = false;
+    }
+  });
+});
+</script>
+{% endif %}
+{% endblock %}

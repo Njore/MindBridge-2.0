@@ -73,6 +73,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     return new Date(str).toLocaleString('en-GB', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
   }
 
+  // ── Mark capsule as read on open ─────────────────────────────────────────
+  async function markRead() {
+    try {
+      await fetch(`/messaging/capsules/${capsuleId}/mark-read`, { method: 'POST' });
+    } catch {}
+  }
+
   // ── Load capsule ──────────────────────────────────────────────────────────
   async function loadCapsule() {
     try {
@@ -154,6 +161,9 @@ if (userType === 'therapist' && c.priority_level) {
       }
     };
 
+      // ── Mark as read on opening ───────────────────────────────────────────
+      markRead();
+
       // ── Actions based on status + user type ───────────────────────────────
       const actions = document.getElementById('capsule-actions');
 
@@ -167,10 +177,14 @@ if (userType === 'therapist' && c.priority_level) {
           actions.innerHTML = `<button class="btn btn-outline" onclick="archiveCapsule()">Archive</button>`;
         }
       } else {
-        // THERAPIST: can reply but never seal. Archive sealed/archived capsules.
+        // THERAPIST: can reply but never seal.
+        // Show "Mark as Read" (which archives from unread queue) and archive option.
+        const therapistActions = [];
+        therapistActions.push(`<button class="btn btn-outline" onclick="markAsRead()" title="Mark as read and return to inbox">✓ Mark as Read</button>`);
         if (c.status === 'sealed' || c.status === 'archived') {
-          actions.innerHTML = `<button class="btn btn-outline" onclick="archiveCapsule()">Archive</button>`;
+          therapistActions.push(`<button class="btn btn-outline" onclick="archiveCapsule()" style="margin-left:0.5rem;">Archive</button>`);
         }
+        actions.innerHTML = therapistActions.join('');
       }
 
       renderMessages(data.messages, c.client_id);
@@ -249,6 +263,13 @@ if (userType === 'therapist' && c.priority_level) {
       showAlert('Network error.');
     }
   }
+
+  // ── Mark as Read ─────────────────────────────────────────────────────────
+  window.markAsRead = async function() {
+    await markRead();
+    showAlert('Capsule marked as read. ✓', 'success');
+    setTimeout(() => window.location = '/messaging/inbox', 800);
+  };
 
   // ── Archive capsule ───────────────────────────────────────────────────────
   window.archiveCapsule = async function() {

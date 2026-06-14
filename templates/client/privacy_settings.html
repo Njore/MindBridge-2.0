@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+
+{% block title %}Privacy Settings - MindBridge{% endblock %}
+
+{% block content %}
+<div class="container">
+
+    <div class="card">
+        <div class="card-header">
+            <h2>⚙️ Privacy Settings</h2>
+            <p style="color: var(--text-muted);">
+                Control how MindBridge collects and uses your data, in line with the
+                <strong>Kenya Data Protection Act (2019)</strong>.
+            </p>
+        </div>
+
+        {% if not settings %}
+        <div class="alert alert-warning">
+            ⚠️ No privacy settings found for your account. Please contact support.
+        </div>
+        {% else %}
+
+        <!-- Status banner -->
+        <div id="settings-banner" style="display:none;" class="alert"></div>
+
+        <form id="privacy-form" onsubmit="saveSettings(event)">
+
+            <!-- ── Toggles ──────────────────────────────────────── -->
+            <h3 style="margin-bottom: 1rem;">Data Usage</h3>
+
+            <div class="privacy-toggle-row">
+                <div>
+                    <strong>Data Analytics</strong>
+                    <p style="color:var(--text-muted); font-size:0.875rem; margin:0.25rem 0 0;">
+                        Allow anonymous usage analytics to help improve the platform.
+                    </p>
+                </div>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="allow_data_analytics"
+                        {% if settings.allow_data_analytics %}checked{% endif %}>
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+
+
+            <!-- ── Retention ────────────────────────────────────── -->
+            <h3 style="margin: 1.75rem 0 1rem;">Data Retention</h3>
+
+            <div class="form-group">
+                <label for="data_retention_days">
+                    Retain my data for
+                    <strong id="retention-label">{{ settings.data_retention_days }}</strong> days
+                </label>
+                <input
+                    type="range"
+                    id="data_retention_days"
+                    min="30" max="3650" step="30"
+                    value="{{ settings.data_retention_days }}"
+                    class="retention-slider"
+                    oninput="document.getElementById('retention-label').textContent = this.value"
+                >
+                <div style="display:flex; justify-content:space-between; font-size:0.8rem; color:var(--text-muted); margin-top:0.25rem;">
+                    <span>30 days</span>
+                    <span>~1 year</span>
+                    <span>~5 years</span>
+                    <span>~10 years</span>
+                </div>
+            </div>
+
+            <!-- ── Encrypted Storage ────────────────────────────── -->
+            <div class="privacy-toggle-row" style="margin-top:1.5rem;">
+                <div>
+                    <strong>Encrypted Storage</strong>
+                    <p style="color:var(--text-muted); font-size:0.875rem; margin:0.25rem 0 0;">
+                        Store all your data with end-to-end encryption (recommended).
+                    </p>
+                </div>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="encrypted_storage_preference"
+                        {% if settings.encrypted_storage_preference %}checked{% endif %} disabled>
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+            <p style="font-size:0.8rem; color:var(--text-muted); margin-top:0.5rem;">
+                🔒 Encrypted storage cannot be disabled for clinical data. Contact support to adjust other storage preferences.
+            </p>
+
+            <!-- ── Footer ───────────────────────────────────────── -->
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-top:2rem; flex-wrap:wrap; gap:1rem;">
+                <p style="color:var(--text-muted); font-size:0.85rem; margin:0;">
+                    Last updated: <strong>{{ settings.last_updated }}</strong>
+                </p>
+                <div style="display:flex; gap:0.75rem;">
+                    <a href="/auth/profile" class="btn btn-outline">← Back to Profile</a>
+                    <button type="submit" class="btn btn-primary" id="save-btn">💾 Save Changes</button>
+                </div>
+            </div>
+
+        </form>
+        {% endif %}
+    </div>
+
+</div>
+
+<style>
+/* Toggle switch */
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 52px;
+    height: 28px;
+    flex-shrink: 0;
+}
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.toggle-slider {
+    position: absolute;
+    inset: 0;
+    background: var(--border, #ccc);
+    border-radius: 28px;
+    cursor: pointer;
+    transition: background 0.25s;
+}
+.toggle-slider::before {
+    content: '';
+    position: absolute;
+    width: 20px; height: 20px;
+    left: 4px; top: 4px;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform 0.25s;
+}
+.toggle-switch input:checked + .toggle-slider { background: var(--primary, #4f46e5); }
+.toggle-switch input:checked + .toggle-slider::before { transform: translateX(24px); }
+.toggle-switch input:disabled + .toggle-slider { opacity: 0.6; cursor: not-allowed; }
+
+/* Row layout */
+.privacy-toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 0;
+    border-bottom: 1px solid var(--border, #e5e7eb);
+}
+.privacy-toggle-row:last-of-type { border-bottom: none; }
+
+/* Slider */
+.retention-slider {
+    width: 100%;
+    margin-top: 0.5rem;
+    accent-color: var(--primary, #4f46e5);
+}
+</style>
+
+<script>
+function saveSettings(e) {
+    e.preventDefault();
+    const btn    = document.getElementById('save-btn');
+    const banner = document.getElementById('settings-banner');
+
+    btn.disabled    = true;
+    btn.textContent = 'Saving…';
+
+    const payload = {
+        allow_data_analytics:          document.getElementById('allow_data_analytics').checked,
+        data_retention_days:           parseInt(document.getElementById('data_retention_days').value, 10)
+    };
+
+    fetch('/client/privacy/settings', {
+        method:  'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(payload)
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.message) {
+            showBanner('success', '✅ ' + data.message);
+        } else {
+            showBanner('danger', '❌ ' + (data.error || 'Something went wrong.'));
+        }
+    })
+    .catch(() => showBanner('danger', '❌ Network error — please try again.'))
+    .finally(() => {
+        btn.disabled    = false;
+        btn.textContent = '💾 Save Changes';
+    });
+}
+
+function showBanner(type, html) {
+    const banner = document.getElementById('settings-banner');
+    banner.className     = `alert alert-${type}`;
+    banner.innerHTML     = html;
+    banner.style.display = 'block';
+    banner.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+</script>
+{% endblock %}

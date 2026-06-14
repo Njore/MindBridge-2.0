@@ -8,7 +8,7 @@ from typing import Dict, List
 class GraniteSentimentAnalyzer:
     """Analyze message sentiment using Granite AI (via Ollama API)"""
 
-    def __init__(self, model_name="granite3.3:2b", base_url="http://localhost:11434"):
+    def __init__(self, model_name="granite4:micro-h", base_url="http://localhost:11434"):
         self.model_name = model_name
         self.base_url = base_url
         self.api_url = f"{base_url}/api/chat"
@@ -151,4 +151,4 @@ Use CRITICAL for any immediate safety concern. Use your clinical judgment for ev
         }
 
 
-analyzer = GraniteSentimentAnalyzer(model_name="granite3.3:2b")
+analyzer = GraniteSentimentAnalyzer(model_name="granite4:micro-h")

@@ -32,11 +32,11 @@ def ensure_venv():
 
 ensure_venv()
 
-
 from flask import Flask, render_template, session
 from models import db
 import click
 from dotenv import load_dotenv
+from services.timezone import format_eat
 
 # Load environment variables
 load_dotenv()
@@ -64,6 +64,11 @@ def create_app():
     # Initialize database
     db.init_app(app)
 
+    # Make East African Time (EAT, UTC+3) available in templates.
+    # Stored timestamps are kept in UTC; use {{ some_datetime|eat }}
+    # in any template to render it in EAT instead.
+    app.jinja_env.filters['eat'] = format_eat
+
     # Register blueprints
     from blueprints.auth import auth_bp
     from blueprints.client import client_bp
@@ -85,6 +90,11 @@ def create_app():
     # Register CLI commands
     register_commands(app)
 
+    from seed import register_seed_command
+    register_seed_command(app)
+
+    from seed_extras import register_seed_extras_command
+    register_seed_extras_command(app)
     @app.route('/')
     def index():
         return render_template('index.html')

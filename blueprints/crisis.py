@@ -45,6 +45,20 @@ def log_event_page():
     return render_template('crisis/log_event.html')
 
 
+@crisis_bp.route('/technique-detail/<int:technique_id>', methods=['GET'])
+def technique_detail_page(technique_id):
+    """Show a single deescalation technique's detail page - always accessible"""
+    technique = DeescalationTechnique.query.filter_by(
+        technique_id=technique_id,
+        is_active=True
+    ).first()
+
+    if not technique:
+        return render_template('crisis/technique_detail.html', technique=None), 404
+
+    return render_template('crisis/technique_detail.html', technique=technique)
+
+
 # ========================================
 # CRISIS EVENTS
 # ========================================
@@ -205,7 +219,7 @@ def update_crisis_event(crisis_id):
 # DEESCALATION TECHNIQUES
 # ========================================
 
-@crisis_bp.route('/techniques', methods=['GET'])
+@crisis_bp.route('/api/techniques', methods=['GET'])
 def get_techniques():
     """
     Get deescalation techniques
@@ -376,7 +390,7 @@ def create_technique():
 # EMERGENCY RESOURCES
 # ========================================
 
-@crisis_bp.route('/resources', methods=['GET'])
+@crisis_bp.route('/api/resources', methods=['GET'])
 def get_emergency_resources():
     """
     Get emergency resources (always accessible)

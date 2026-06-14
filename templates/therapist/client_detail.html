@@ -1,0 +1,218 @@
+{% extends "base.html" %}
+
+{% block title %}Client Details - MindBridge{% endblock %}
+
+{% block content %}
+<div class="container">
+
+  <!-- Back link -->
+  <div style="margin-bottom:1.5rem;">
+    <a href="/therapist/clients" style="color:var(--text-muted);text-decoration:none;font-size:0.95rem;">← Back to Clients</a>
+  </div>
+
+  <!-- Alert area -->
+  <div id="alert-area"></div>
+
+  <!-- Loading state -->
+  <div id="loading" style="text-align:center;padding:3rem;color:var(--text-muted);">
+    <p>Loading client details...</p>
+  </div>
+
+  <!-- Error state -->
+  <div id="error-state" style="display:none;text-align:center;padding:3rem;color:var(--text-muted);">
+    <div style="font-size:3rem;margin-bottom:1rem;">⚠️</div>
+    <h3 id="error-message">Client not found</h3>
+    <a href="/therapist/clients" class="btn btn-outline" style="margin-top:1rem;">← Back to Clients</a>
+  </div>
+
+  <!-- Main content -->
+  <div id="main-content" style="display:none;">
+
+    <!-- Header card -->
+    <div class="card" style="margin-bottom:1.5rem;">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;">
+        <div style="display:flex;align-items:center;gap:1rem;">
+          <div id="avatar" style="width:64px;height:64px;border-radius:50%;background:var(--primary-light);display:flex;align-items:center;justify-content:center;color:white;font-weight:700;font-size:1.5rem;flex-shrink:0;"></div>
+          <div>
+            <h1 id="client-name" style="margin:0;"></h1>
+            <div id="client-email" style="color:var(--text-muted);font-size:0.95rem;"></div>
+            <div id="client-phone" style="color:var(--text-muted);font-size:0.9rem;"></div>
+          </div>
+        </div>
+        <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
+          <a id="send-prompt-btn" href="#" class="btn btn-secondary">📝 Send Prompt</a>
+        </div>
+      </div>
+      <div style="margin-top:1.25rem;padding-top:1.25rem;border-top:1px solid var(--border);display:flex;gap:2rem;flex-wrap:wrap;">
+        <div>
+          <div style="font-size:0.8rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;">Connected Since</div>
+          <div id="connected-since" style="font-weight:600;margin-top:0.2rem;"></div>
+        </div>
+        <div>
+          <div style="font-size:0.8rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;">Goals</div>
+          <div id="client-goals" style="font-weight:600;margin-top:0.2rem;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Notes + Capsules row -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;">
+
+      <!-- Therapist Notes -->
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+          <h2 style="margin:0;font-size:1.1rem;">🗒️ Therapist Notes</h2>
+          <button id="save-notes-btn" class="btn btn-primary" style="font-size:0.85rem;padding:0.4rem 0.9rem;" onclick="saveNotes()">Save</button>
+        </div>
+        <textarea id="therapist-notes" class="form-control" rows="8" placeholder="Add your private notes about this client..."></textarea>
+      </div>
+
+      <!-- Recent Capsules -->
+      <div class="card">
+        <h2 style="margin:0 0 1rem;font-size:1.1rem;">📦 Recent Capsules</h2>
+        <div id="capsules-list"></div>
+        <div id="no-capsules" style="display:none;color:var(--text-muted);text-align:center;padding:2rem 0;font-size:0.95rem;">No capsules yet.</div>
+      </div>
+
+    </div>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+
+  const clientId = {{ client_id }};
+  let relationshipId = null;
+
+  // ── Load client data ─────────────────────────────────────────────────────────
+  async function loadClient() {
+    try {
+      const resp = await fetch(`/therapist/api/clients/${clientId}`);
+      const data = await resp.json();
+
+      document.getElementById('loading').style.display = 'none';
+
+      if (!resp.ok) {
+        showError(data.error || 'Failed to load client details.');
+        return;
+      }
+
+      renderClient(data);
+    } catch (err) {
+      document.getElementById('loading').style.display = 'none';
+      showError('Network error. Please refresh the page.');
+    }
+  }
+
+  function renderClient(data) {
+    const { client, relationship, recent_capsules } = data;
+    relationshipId = relationship.relationship_id;
+
+    // Header
+    document.getElementById('avatar').textContent =
+      escapeHtml(client.first_name[0]) + escapeHtml(client.last_name[0]);
+    document.getElementById('client-name').textContent =
+      `${client.first_name} ${client.last_name}`;
+    document.getElementById('client-email').textContent = client.email;
+    document.getElementById('client-phone').textContent = client.phone || '';
+    document.getElementById('connected-since').textContent = formatDate(relationship.start_date);
+    document.getElementById('client-goals').textContent = relationship.client_goals || '—';
+    document.getElementById('send-prompt-btn').href =
+      `/therapist/create-prompt?client=${relationship.relationship_id}`;
+
+    // Notes
+    document.getElementById('therapist-notes').value = relationship.therapist_notes || '';
+
+    // Capsules
+    renderCapsules(recent_capsules);
+
+    document.getElementById('main-content').style.display = 'block';
+  }
+
+  function renderCapsules(capsules) {
+    const list = document.getElementById('capsules-list');
+    const empty = document.getElementById('no-capsules');
+
+    if (!capsules || capsules.length === 0) {
+      empty.style.display = 'block';
+      return;
+    }
+
+    const priorityColour = { CRITICAL: '#dc3545', HIGH: '#fd7e14', MEDIUM: '#ffc107', LOW: '#6c757d' };
+
+    list.innerHTML = capsules.map(c => `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:0.85rem;border:1px solid var(--border);border-radius:8px;margin-bottom:0.75rem;">
+        <div>
+          <div style="font-weight:600;font-size:0.95rem;">${escapeHtml(c.title)}</div>
+          <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.15rem;">${formatDate(c.created_at)}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:0.6rem;">
+          <span style="font-size:0.75rem;font-weight:600;color:${priorityColour[c.priority_level] || '#6c757d'};background:${priorityColour[c.priority_level] || '#6c757d'}22;padding:0.2rem 0.55rem;border-radius:4px;">
+            ${escapeHtml(c.priority_level)}
+          </span>
+          <span style="font-size:0.75rem;color:var(--text-muted);text-transform:capitalize;">${escapeHtml(c.status)}</span>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  // ── Save notes ───────────────────────────────────────────────────────────────
+  window.saveNotes = async function() {
+    const notes = document.getElementById('therapist-notes').value;
+    const btn = document.getElementById('save-notes-btn');
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+
+    try {
+      const resp = await fetch(`/therapist/clients/${clientId}/notes`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ therapist_notes: notes })
+      });
+      const data = await resp.json();
+
+      if (resp.ok) {
+        showAlert('Notes saved successfully.', 'success');
+      } else {
+        showAlert(data.error || 'Failed to save notes.');
+      }
+    } catch (err) {
+      showAlert('Network error. Please try again.');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Save';
+    }
+  };
+
+  // ── Helpers ──────────────────────────────────────────────────────────────────
+  function showAlert(message, type = 'danger') {
+    const area = document.getElementById('alert-area');
+    area.innerHTML = `
+      <div class="alert alert-${type}" role="alert" style="margin-bottom:1rem;">
+        ${message}
+        <button onclick="this.parentElement.remove()" style="float:right;background:none;border:none;cursor:pointer;font-size:1.2rem;">&times;</button>
+      </div>`;
+  }
+
+  function showError(message) {
+    document.getElementById('error-message').textContent = message;
+    document.getElementById('error-state').style.display = 'block';
+  }
+
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+
+  function formatDate(dateStr) {
+    return new Date(dateStr).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' });
+  }
+
+  loadClient();
+});
+</script>
+{% endblock %}

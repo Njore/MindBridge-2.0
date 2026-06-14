@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+
+{% block title %}Consent Status - MindBridge{% endblock %}
+
+{% block content %}
+<div class="container">
+
+    <div class="card">
+        <div class="card-header">
+            <h2>📋 Consent Status</h2>
+            <p style="color: var(--text-muted);">
+                A record of every consent you have granted on MindBridge, in accordance with the
+                <strong>Kenya Data Protection Act (2019)</strong>.
+            </p>
+        </div>
+
+        {% if not consents %}
+        <div class="alert alert-warning" style="margin-top: 1rem;">
+            ℹ️ No consent records found for your account.
+        </div>
+
+        {% else %}
+
+        <div style="overflow-x: auto; margin-top: 1rem;">
+            <table class="consent-table">
+                <thead>
+                    <tr>
+                        <th>Consent Type</th>
+                        <th>Version</th>
+                        <th>Status</th>
+                        <th>Date Agreed</th>
+                        <th>IP Address</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for c in consents %}
+                    <tr>
+                        <td>
+                            <strong>{{ c.consent_type | replace('_', ' ') | title }}</strong>
+                        </td>
+                        <td>
+                            <span class="badge badge-outline">v{{ c.version }}</span>
+                        </td>
+                        <td>
+                            {% if c.agreed %}
+                            <span class="badge badge-success">✅ Agreed</span>
+                            {% else %}
+                            <span class="badge badge-danger">❌ Declined</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ c.agreed_at }}</td>
+                        <td style="color: var(--text-muted); font-size: 0.85rem;">{{ c.ip_address }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <p style="margin-top: 1.5rem; font-size: 0.85rem; color: var(--text-muted);">
+            🔒 Consent records are maintained for legal compliance and cannot be deleted.
+            To withdraw a consent, please contact
+            <a href="mailto:privacy@mindbridge.app" style="color:var(--primary);">privacy@mindbridge.app</a>.
+        </p>
+
+        {% endif %}
+
+        <div style="margin-top: 1.5rem;">
+            <a href="/auth/profile" class="btn btn-outline">← Back to Profile</a>
+        </div>
+    </div>
+
+</div>
+
+<style>
+.consent-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+.consent-table th {
+    text-align: left;
+    padding: 0.65rem 1rem;
+    background: var( #f9fafb);
+    border-bottom: 2px solid var(--border, #e5e7eb);
+    color: var(--text-muted);
+    font-weight: 600;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.consent-table td {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--border, #e5e7eb);
+    vertical-align: middle;
+}
+.consent-table tbody tr:last-child td { border-bottom: none; }
+.consent-table tbody tr:hover { background: var( #f9fafb); }
+
+.badge {
+    display: inline-block;
+    padding: 0.2em 0.65em;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.badge-outline {
+    border: 1px solid var(--border, #e5e7eb);
+    color: var(--text-muted);
+}
+.badge-success {
+    background: #d1fae5;
+    color: #065f46;
+}
+.badge-danger {
+    background: #fee2e2;
+    color: #991b1b;
+}
+</style>
+{% endblock %}

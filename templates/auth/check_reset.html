@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block title %}Check Reset Status - MindBridge{% endblock %}
+
+{% block content %}
+<div class="container" style="max-width: 500px;">
+    <div class="card">
+        <div class="card-header">
+            <h2>Check Your Reset Request</h2>
+            <p style="color: var(--text-muted);">
+                Enter your email below. If your admin has approved your request,
+                you'll be taken straight to the reset form.
+            </p>
+        </div>
+
+        {% if message %}
+            <div style="
+                background: rgba(255,179,71,0.1);
+                border: 1px solid rgba(255,179,71,0.3);
+                color: var(--warning, #e6a817);
+                border-radius: 0.5rem;
+                padding: 0.85rem 1rem;
+                margin-bottom: 1.25rem;
+                font-size: 0.9rem;
+                display: flex;
+                align-items: flex-start;
+                gap: 0.6rem;
+            ">
+                <span style="flex-shrink:0;">⏳</span>
+                <span>{{ message }}</span>
+            </div>
+        {% endif %}
+
+        <form action="/auth/check-reset" method="POST">
+            <div class="form-group">
+                <label for="email">Email Address</label>
+                <input
+                    type="email"
+                    id="email"
+                    name="email"
+                    class="form-control"
+                    required
+                    autofocus
+                    placeholder="The email you used to register"
+                >
+            </div>
+
+            <button type="submit" class="btn btn-primary" style="width: 100%; padding: 1rem; font-size: 1.1rem;">
+                Check Status
+            </button>
+        </form>
+
+        <div style="text-align: center; margin-top: 1.5rem;">
+            <p style="color: var(--text-muted); font-size: 0.875rem;">
+                Haven't submitted a request yet?
+                <a href="/auth/login">Go back to login</a>
+            </p>
+        </div>
+
+        <hr style="margin: 2rem 0;">
+
+        <div style="text-align: center;">
+            <p style="color: var(--text-muted); margin-bottom: 1rem;">Need immediate help?</p>
+            <a href="/crisis/resources" class="btn btn-danger">Crisis Resources</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

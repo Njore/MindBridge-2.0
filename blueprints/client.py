@@ -3,8 +3,8 @@ from models import (db, User, PrivatePocket, ConsentAgreement, UserPrivacySettin
                     ActivityLog, Capsule, Message, CrisisEvent, PromptResponse,
                     TherapeuticPrompt, ClientTherapistRelationship, Notification)
 from datetime import datetime, date, timedelta
-from cryptography.fernet import Fernet
-import os
+from services.encryption import encrypt_content, decrypt_content
+from services.timezone import today_eat, now_eat
 import io
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -12,24 +12,6 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
 from reportlab.lib.units import inch
 
 client_bp = Blueprint('client', __name__)
-
-# Encryption for Private Pockets (PRD 2.2 - Encryption)
-ENCRYPTION_KEY = os.getenv('ENCRYPTION_KEY')
-if ENCRYPTION_KEY:
-    cipher_suite = Fernet(ENCRYPTION_KEY.encode())
-else:
-    # Generate a key if not in .env (development only)
-    cipher_suite = Fernet(Fernet.generate_key())
-
-
-def encrypt_content(content):
-    """Encrypt private pocket content"""
-    return cipher_suite.encrypt(content.encode()).decode()
-
-
-def decrypt_content(encrypted_content):
-    """Decrypt private pocket content"""
-    return cipher_suite.decrypt(encrypted_content.encode()).decode()
 
 
 def require_client():
@@ -108,8 +90,8 @@ def create_pocket():
     if not content:
         return jsonify({'error': 'Content cannot be empty'}), 400
 
-    # Use today's date if not provided
-    pocket_date = data.get('date', date.today().isoformat())
+    # Use today's date (East African Time) if not provided
+    pocket_date = data.get('date', today_eat().isoformat())
 
     try:
         # Check if pocket exists for this date
@@ -178,7 +160,7 @@ def get_week_pockets():
     """Get all pockets for the current week"""
     user_id = session['user_id']
 
-    today = date.today()
+    today = today_eat()
     start_of_week = today - timedelta(days=today.weekday())
     end_of_week = start_of_week + timedelta(days=6)
 
@@ -199,6 +181,40 @@ def get_week_pockets():
         } for p in pockets]
     }), 200
 
+@client_bp.route('/pockets/week-range', methods=['GET'])
+@require_client()
+def get_pockets_week_range():
+    """Get all pockets for an arbitrary date range (used by journal UI)"""
+    user_id = session['user_id']
+
+    start_str = request.args.get('start')
+    end_str   = request.args.get('end')
+
+    if not start_str or not end_str:
+        return jsonify({'error': 'start and end query params are required'}), 400
+
+    try:
+        start_date = date.fromisoformat(start_str)
+        end_date   = date.fromisoformat(end_str)
+    except ValueError:
+        return jsonify({'error': 'Dates must be in YYYY-MM-DD format'}), 400
+
+    pockets = PrivatePocket.query.filter(
+        PrivatePocket.client_id == user_id,
+        PrivatePocket.date >= start_date,
+        PrivatePocket.date <= end_date
+    ).order_by(PrivatePocket.date, PrivatePocket.pocket_number).all()
+
+    return jsonify({
+        'start': start_str,
+        'end':   end_str,
+        'pockets': [{
+            'date':          p.date.isoformat(),
+            'pocket_number': p.pocket_number,
+            'content':       decrypt_content(p.content),
+            'updated_at':    p.updated_at.isoformat()
+        } for p in pockets]
+    }), 200
 
 # ========================================
 # DATA EXPORT (PDF)
@@ -220,10 +236,10 @@ def export_pockets_pdf():
     data = request.get_json()
 
     start_date = data.get('start_date')
-    end_date = data.get('end_date', date.today().isoformat())
+    end_date = data.get('end_date', today_eat().isoformat())
 
     if not start_date:
-        start_date = (date.today() - timedelta(days=30)).isoformat()
+        start_date = (today_eat() - timedelta(days=30)).isoformat()
 
     pockets = PrivatePocket.query.filter(
         PrivatePocket.client_id == user_id,
@@ -257,7 +273,7 @@ def export_pockets_pdf():
 
     story.append(Paragraph("MindBridge - 7 Pockets Export", title_style))
     story.append(Paragraph(f"User: {user.first_name} {user.last_name}", styles['Normal']))
-    story.append(Paragraph(f"Export Date: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}", styles['Normal']))
+    story.append(Paragraph(f"Export Date: {now_eat().strftime('%Y-%m-%d %H:%M EAT')}", styles['Normal']))
     story.append(Paragraph(f"Period: {start_date} to {end_date}", styles['Normal']))
     story.append(Spacer(1, 0.5 * inch))
 
@@ -355,7 +371,26 @@ def delete_account():
 @client_bp.route('/privacy/settings', methods=['GET'])
 @require_client()
 def get_privacy_settings():
-    """Get current privacy settings"""
+    """Render privacy settings page"""
+    user_id = session['user_id']
+
+    settings = UserPrivacySetting.query.filter_by(user_id=user_id).first()
+
+    if not settings:
+        return render_template('client/privacy_settings.html', settings=None)
+
+    return render_template('client/privacy_settings.html', settings={
+        'allow_data_analytics': settings.allow_data_analytics,
+        'encrypted_storage_preference': settings.encrypted_storage_preference,
+        'data_retention_days': settings.data_retention_days,
+        'last_updated': settings.last_updated.strftime('%B %d, %Y at %H:%M UTC')
+    })
+
+
+@client_bp.route('/privacy/settings/api', methods=['GET'])
+@require_client()
+def get_privacy_settings_api():
+    """Get current privacy settings as JSON (API endpoint)"""
     user_id = session['user_id']
 
     settings = UserPrivacySetting.query.filter_by(user_id=user_id).first()
@@ -365,12 +400,35 @@ def get_privacy_settings():
 
     return jsonify({
         'allow_data_analytics': settings.allow_data_analytics,
-        'allow_session_recordings': settings.allow_session_recordings,
-        'share_progress_with_therapist': settings.share_progress_with_therapist,
         'encrypted_storage_preference': settings.encrypted_storage_preference,
         'data_retention_days': settings.data_retention_days,
         'last_updated': settings.last_updated.isoformat()
     }), 200
+
+
+# ========================================
+# CONSENT STATUS PAGE
+# ========================================
+
+@client_bp.route('/consent/status', methods=['GET'])
+@require_client()
+def consent_status_page():
+    """Render consent status page"""
+    user_id = session['user_id']
+
+    agreements = ConsentAgreement.query.filter_by(
+        user_id=user_id
+    ).order_by(ConsentAgreement.agreed_date.desc()).all()
+
+    consent_list = [{
+        'consent_type': a.agreement_type,
+        'version': a.version,
+        'agreed': a.is_active,
+        'agreed_at': a.agreed_date.strftime('%B %d, %Y') if a.agreed_date else 'N/A',
+        'ip_address': a.agreed_ip_address or 'N/A',
+    } for a in agreements]
+
+    return render_template('client/consent_status.html', consents=consent_list)
 
 
 @client_bp.route('/privacy/settings', methods=['PUT'])
@@ -387,10 +445,6 @@ def update_privacy_settings():
 
     if 'allow_data_analytics' in data:
         settings.allow_data_analytics = data['allow_data_analytics']
-    if 'allow_session_recordings' in data:
-        settings.allow_session_recordings = data['allow_session_recordings']
-    if 'share_progress_with_therapist' in data:
-        settings.share_progress_with_therapist = data['share_progress_with_therapist']
     if 'data_retention_days' in data:
         retention = data['data_retention_days']
         if retention < 30 or retention > 3650:
@@ -424,7 +478,7 @@ def get_dashboard():
 
     recent_pockets = PrivatePocket.query.filter(
         PrivatePocket.client_id == user_id,
-        PrivatePocket.date >= date.today() - timedelta(days=7)
+        PrivatePocket.date >= today_eat() - timedelta(days=7)
     ).count()
 
     recent_capsules = Capsule.query.filter(
@@ -557,7 +611,7 @@ def respond_to_prompt(prompt_id):
             response_content=data['response_content'],
             insights_gained=data.get('insights_gained', ''),
             emotional_state=data.get('emotional_state', ''),
-            response_date=date.today(),
+            response_date=today_eat(),
             is_shared_with_therapist=data.get('share_with_therapist', True)
         )
         db.session.add(response)

@@ -1,0 +1,386 @@
+{% extends "base.html" %}
+
+{% block title %}All Client Responses - MindBridge{% endblock %}
+
+{% block content %}
+<div class="container" style="max-width:900px;">
+
+  <!-- Page header -->
+  <div style="margin-bottom:2rem;">
+    <a href="/therapist/dashboard"
+       style="display:inline-flex;align-items:center;gap:0.4rem;color:var(--text-muted);
+              text-decoration:none;font-size:0.9rem;margin-bottom:1rem;">
+      ← Back to Dashboard
+    </a>
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;">
+      <div>
+        <h1 style="margin:0 0 0.25rem;">📋 Client Responses</h1>
+        <p style="color:var(--text-muted);margin:0;">All responses from your active clients</p>
+      </div>
+      <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;">
+        <!-- Filter buttons -->
+        <select id="client-filter"
+                style="padding:0.45rem 0.75rem;border:1px solid var(--border);border-radius:8px;
+                       background:var(--bg-light);color:var(--text);font-size:0.875rem;cursor:pointer;">
+          <option value="all">All Clients</option>
+        </select>
+        <select id="feedback-filter"
+                style="padding:0.45rem 0.75rem;border:1px solid var(--border);border-radius:8px;
+                       background:var(--bg-light);color:var(--text);font-size:0.875rem;cursor:pointer;">
+          <option value="all">All Responses</option>
+          <option value="pending">⏳ Awaiting Feedback</option>
+          <option value="done">✓ Feedback Sent</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Summary bar -->
+  <div id="summary-bar"
+       style="display:flex;gap:1rem;margin-bottom:1.75rem;flex-wrap:wrap;">
+    <div class="stat-pill" style="background:var(--primary);color:#fff;">
+      <span id="count-total">—</span> Total
+    </div>
+    <div class="stat-pill" style="background:#fef3c7;color:#92400e;">
+      <span id="count-pending">—</span> Pending
+    </div>
+    <div class="stat-pill" style="background:#ecfdf5;color:#065f46;">
+      <span id="count-done">—</span> Reviewed
+    </div>
+  </div>
+
+  <div id="alert-area"></div>
+
+  <!-- Response list -->
+  <div id="responses-container">
+    <div style="text-align:center;padding:3rem;color:var(--text-muted);">
+      <div style="font-size:2rem;margin-bottom:0.5rem;">⏳</div>
+      Loading responses…
+    </div>
+  </div>
+
+</div>
+
+<!-- Feedback modal -->
+<div id="feedbackModal"
+     style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;
+            background:rgba(0,0,0,0.5);z-index:1000;overflow-y:auto;">
+  <div style="max-width:580px;margin:2rem auto;padding:1rem;">
+    <div class="card">
+      <h3 style="margin-bottom:0.25rem;">Add Feedback</h3>
+      <p id="modal-client-name" style="color:var(--text-muted);font-size:0.9rem;margin-bottom:1.25rem;"></p>
+
+      <div style="background:var(--bg-light);border-radius:8px;padding:1rem;margin-bottom:1.25rem;">
+        <p style="font-size:0.8rem;font-weight:600;color:var(--text-muted);
+                  text-transform:uppercase;letter-spacing:.05em;margin-bottom:0.4rem;">
+          Client's Response
+        </p>
+        <p id="modal-response-preview" style="margin:0;font-size:0.95rem;line-height:1.6;"></p>
+      </div>
+
+      <div class="form-group">
+        <label for="feedback-content">Your Feedback *</label>
+        <textarea id="feedback-content" class="form-control" rows="5"
+          placeholder="Write your feedback, encouragement, or clinical notes here…"></textarea>
+      </div>
+
+      <div style="display:flex;gap:1rem;">
+        <button class="btn btn-outline" onclick="closeFeedbackModal()">Cancel</button>
+        <button class="btn btn-primary" id="submit-feedback-btn" style="flex:1;">Send Feedback</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<input type="hidden" id="active-response-id">
+
+<style>
+  .stat-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 1rem;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+  .response-card {
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 1.25rem;
+    background: #fff;
+    border: 2px solid var(--border);
+    transition: border-color 0.2s;
+  }
+  .response-card.reviewed { border-color: var(--success); }
+  .response-card.pending  { border-color: var(--primary);  }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', async () => {
+
+  const alertArea  = document.getElementById('alert-area');
+  const container  = document.getElementById('responses-container');
+  let allResponses = [];
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  function escapeHtml(str) {
+    return String(str ?? '')
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+
+  function formatDate(iso) {
+    return new Date(iso).toLocaleString(undefined, {
+      year:'numeric', month:'short', day:'numeric',
+      hour:'2-digit', minute:'2-digit'
+    });
+  }
+
+  function showAlert(msg, type = 'danger') {
+    alertArea.innerHTML = `
+      <div class="alert alert-${type}" style="margin-bottom:1.5rem;">
+        ${msg}
+        <button onclick="this.parentElement.remove()"
+          style="float:right;background:none;border:none;cursor:pointer;font-size:1.2rem;">&times;</button>
+      </div>`;
+  }
+
+  const TYPE_COLORS = {
+    reflection:   '#0ea5e9',
+    cbt_exercise: '#f59e0b',
+    gratitude:    '#10b981',
+    emotion_check:'#6366f1',
+    goal_setting: '#ec4899',
+  };
+
+  // ── Fetch all responses ───────────────────────────────────────────────────
+  try {
+    const resp = await fetch('/therapist/api/responses/all');
+    const data = await resp.json();
+
+    if (!resp.ok) {
+      container.innerHTML = `
+        <p style="color:var(--danger);padding:2rem;text-align:center;">
+          ${escapeHtml(data.error || 'Failed to load responses.')}
+        </p>`;
+      return;
+    }
+
+    allResponses = data.responses;
+
+    // Populate client filter dropdown
+    const clientFilter = document.getElementById('client-filter');
+    const uniqueClients = [...new Map(allResponses.map(r => [r.client_id, r.client_name])).entries()];
+    uniqueClients.forEach(([id, name]) => {
+      const opt = document.createElement('option');
+      opt.value = id;
+      opt.textContent = name;
+      clientFilter.appendChild(opt);
+    });
+
+    renderResponses(allResponses);
+
+    // ── Filter listeners ──────────────────────────────────────────────────
+    clientFilter.addEventListener('change', applyFilters);
+    document.getElementById('feedback-filter').addEventListener('change', applyFilters);
+
+  } catch (e) {
+    container.innerHTML = `
+      <p style="color:var(--danger);padding:2rem;text-align:center;">
+        Network error. Please try again.
+      </p>`;
+    console.error(e);
+  }
+
+  // ── Apply filters ─────────────────────────────────────────────────────────
+  function applyFilters() {
+    const clientVal   = document.getElementById('client-filter').value;
+    const feedbackVal = document.getElementById('feedback-filter').value;
+
+    let filtered = allResponses;
+
+    if (clientVal !== 'all') {
+      filtered = filtered.filter(r => String(r.client_id) === clientVal);
+    }
+    if (feedbackVal === 'pending') {
+      filtered = filtered.filter(r => !r.therapist_feedback);
+    } else if (feedbackVal === 'done') {
+      filtered = filtered.filter(r =>  r.therapist_feedback);
+    }
+
+    renderResponses(filtered);
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────────
+  function renderResponses(list) {
+    // Update summary pills
+    document.getElementById('count-total').textContent   = list.length;
+    document.getElementById('count-pending').textContent = list.filter(r => !r.therapist_feedback).length;
+    document.getElementById('count-done').textContent    = list.filter(r =>  r.therapist_feedback).length;
+
+    if (list.length === 0) {
+      container.innerHTML = `
+        <div style="text-align:center;padding:3rem;color:var(--text-muted);">
+          <div style="font-size:3.5rem;margin-bottom:1rem;">📭</div>
+          <h3>No responses found</h3>
+          <p>Try adjusting the filters above.</p>
+        </div>`;
+      return;
+    }
+
+    container.innerHTML = list.map(r => {
+      const typeColor = TYPE_COLORS[r.prompt_type] || 'var(--primary)';
+      const isReviewed = !!r.therapist_feedback;
+
+      return `
+      <div id="response-card-${r.response_id}"
+           class="response-card ${isReviewed ? 'reviewed' : 'pending'}">
+
+        <!-- Card header -->
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;
+                    flex-wrap:wrap;gap:0.75rem;margin-bottom:1.25rem;">
+          <div style="display:flex;align-items:center;gap:0.75rem;">
+            <!-- Client avatar -->
+            <div style="width:40px;height:40px;border-radius:50%;background:var(--primary);
+                        display:flex;align-items:center;justify-content:center;
+                        color:#fff;font-weight:700;font-size:0.9rem;flex-shrink:0;">
+              ${escapeHtml(r.client_name.split(' ').map(n => n[0]).join(''))}
+            </div>
+            <div>
+              <p style="margin:0;font-weight:700;font-size:1rem;">${escapeHtml(r.client_name)}</p>
+              <p style="margin:0;font-size:0.8rem;color:var(--text-muted);">
+                ${formatDate(r.response_date)}
+              </p>
+            </div>
+          </div>
+
+          <!-- Badges -->
+          <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
+            <span style="background:${typeColor};color:#fff;padding:0.2rem 0.7rem;
+                         border-radius:20px;font-size:0.75rem;font-weight:600;">
+              ${escapeHtml((r.prompt_type || '').replace('_', ' ').toUpperCase())}
+            </span>
+            ${isReviewed
+              ? '<span style="background:#ecfdf5;color:#065f46;padding:0.2rem 0.7rem;border-radius:20px;font-size:0.75rem;font-weight:600;">✓ Reviewed</span>'
+              : '<span style="background:#fef3c7;color:#92400e;padding:0.2rem 0.7rem;border-radius:20px;font-size:0.75rem;font-weight:600;">⏳ Pending</span>'
+            }
+            ${r.emotional_state ? `
+              <span style="background:var(--bg-light);color:var(--text-muted);padding:0.2rem 0.7rem;
+                           border-radius:20px;font-size:0.75rem;">
+                💭 ${escapeHtml(r.emotional_state)}
+              </span>` : ''}
+          </div>
+        </div>
+
+        <!-- Prompt title -->
+        <p style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;
+                  color:var(--text-muted);margin-bottom:0.3rem;">Prompt</p>
+        <p style="margin:0 0 1rem;font-weight:600;color:var(--primary);">
+          <a href="/therapist/prompts/${r.prompt_id}/responses"
+             style="color:var(--primary);text-decoration:none;">
+            🎯 ${escapeHtml(r.prompt_title)}
+          </a>
+        </p>
+
+        <!-- Response content -->
+        <p style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;
+                  color:var(--text-muted);margin-bottom:0.4rem;">Client's Response</p>
+        <div style="background:var(--bg-light);border-radius:8px;padding:1rem;margin-bottom:1rem;">
+          <p style="margin:0;line-height:1.65;white-space:pre-line;">${escapeHtml(r.response_content)}</p>
+        </div>
+
+        <!-- Insights -->
+        ${r.insights_gained ? `
+          <p style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;
+                    color:var(--text-muted);margin-bottom:0.4rem;">Insights Gained</p>
+          <div style="border-left:3px solid var(--primary-light);padding-left:0.85rem;margin-bottom:1rem;">
+            <p style="margin:0;font-style:italic;color:#555;">${escapeHtml(r.insights_gained)}</p>
+          </div>` : ''}
+
+        <!-- Therapist feedback (if exists) -->
+        ${isReviewed ? `
+          <p style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;
+                    color:var(--text-muted);margin-bottom:0.4rem;">Your Feedback</p>
+          <div style="background:#ecfdf5;border:1px solid #6ee7b7;border-radius:8px;
+                      padding:1rem;margin-bottom:1rem;">
+            <p style="margin:0;line-height:1.65;">${escapeHtml(r.therapist_feedback)}</p>
+          </div>` : ''}
+
+        <!-- Action -->
+        <div style="margin-top:1rem;">
+          <button class="btn ${isReviewed ? 'btn-outline' : 'btn-primary'}"
+            onclick="openFeedbackModal(
+              ${r.response_id},
+              '${escapeHtml(r.client_name)}',
+              ${JSON.stringify(r.response_content)}
+            )">
+            ${isReviewed ? '✏️ Edit Feedback' : '💬 Add Feedback'}
+          </button>
+        </div>
+
+      </div>`;
+    }).join('');
+  }
+
+  // ── Feedback modal ────────────────────────────────────────────────────────
+  window.openFeedbackModal = function(responseId, clientName, previewText) {
+    document.getElementById('active-response-id').value         = responseId;
+    document.getElementById('modal-client-name').textContent    = clientName;
+    document.getElementById('modal-response-preview').textContent = previewText;
+    document.getElementById('feedback-content').value           = '';
+    document.getElementById('feedbackModal').style.display      = 'block';
+  };
+
+  window.closeFeedbackModal = function() {
+    document.getElementById('feedbackModal').style.display = 'none';
+  };
+
+  document.getElementById('feedbackModal').addEventListener('click', e => {
+    if (e.target === document.getElementById('feedbackModal')) closeFeedbackModal();
+  });
+
+  document.getElementById('submit-feedback-btn').addEventListener('click', async () => {
+    const responseId = document.getElementById('active-response-id').value;
+    const feedback   = document.getElementById('feedback-content').value.trim();
+    const btn        = document.getElementById('submit-feedback-btn');
+
+    if (!feedback) { showAlert('Please write your feedback before submitting.'); return; }
+
+    btn.disabled    = true;
+    btn.textContent = 'Sending…';
+
+    try {
+      const resp = await fetch(`/therapist/prompts/responses/${responseId}/feedback`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ feedback })
+      });
+      const data = await resp.json();
+      closeFeedbackModal();
+
+      if (resp.ok) {
+        showAlert('Feedback sent successfully! 🎉', 'success');
+        // Update card in-place without full reload
+        const card = document.getElementById(`response-card-${responseId}`);
+        if (card) {
+          card.classList.replace('pending', 'reviewed');
+          setTimeout(() => applyFilters(), 800);
+        }
+      } else {
+        showAlert(data.error || 'Failed to send feedback.');
+      }
+    } catch (e) {
+      closeFeedbackModal();
+      showAlert('Network error. Please try again.');
+    } finally {
+      btn.disabled    = false;
+      btn.textContent = 'Send Feedback';
+    }
+  });
+
+});
+</script>
+{% endblock %}

@@ -14,7 +14,7 @@
       --border:    #1e2330;
       --border-hi: #2a3045;
       --text:      #c8cfe0;
-      --muted:     #5a6380;
+      --muted: rgba(219, 221, 229, 0.91);
       --accent:    #4f7cff;
       --accent-lo: rgba(79,124,255,.12);
       --red:       #ff4d6a;
@@ -438,6 +438,10 @@
       <span class="icon">⊘</span> Erasure Requests
       <span class="nav-badge" id="badge-erasure" style="display:none"></span>
     </button>
+    <button class="nav-item" onclick="navigate('password-resets')">
+      <span class="icon">⟳</span> Password Resets
+      <span class="nav-badge" id="badge-password-resets" style="display:none"></span>
+    </button>
     <button class="nav-item" onclick="navigate('logs')">
       <span class="icon">≡</span> Activity Logs
     </button>
@@ -586,6 +590,22 @@
     </div>
   </div>
 
+  <!-- PASSWORD RESET REQUESTS -->
+  <div class="panel" id="panel-password-resets">
+    <div class="filter-bar">
+      <select id="reset-status" onchange="loadPasswordResets()">
+        <option value="pending">Pending</option>
+        <option value="approved">Approved</option>
+        <option value="used">Used</option>
+        <option value="rejected">Rejected</option>
+        <option value="">All</option>
+      </select>
+    </div>
+    <div class="table-wrap" id="password-resets-table">
+      <div class="loading"><div class="spinner"></div> Loading…</div>
+    </div>
+  </div>
+
   <!-- ACTIVITY LOGS -->
   <div class="panel" id="panel-logs">
     <div class="filter-bar">
@@ -633,6 +653,41 @@
   </div>
 </div>
 
+<!-- Password reset approve -->
+<div class="modal-backdrop" id="modal-reset">
+  <div class="modal" style="width:480px;">
+    <h3 id="reset-modal-title">Approve Password Reset</h3>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.5">
+      A one-time reset link will be generated, valid for <strong style="color:var(--text)">1 hour</strong>.
+      Copy it and share it with the user directly (phone, in-person, or secure message).
+    </p>
+
+    <!-- Pre-approval view -->
+    <div id="reset-modal-confirm">
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="closeModal('modal-reset')">Cancel</button>
+        <button class="btn btn-red" onclick="confirmResetReject()">Reject</button>
+        <button class="btn btn-green" onclick="confirmResetApprove()">Approve &amp; Generate Link</button>
+      </div>
+    </div>
+
+    <!-- Post-approval: show the link -->
+    <div id="reset-modal-link" style="display:none;">
+      <label>Reset Link (share this with the user)</label>
+      <div style="display:flex;gap:8px;margin-top:6px;">
+        <input id="reset-link-val" type="text" readonly
+          style="flex:1;background:var(--bg);border:1px solid var(--border);color:var(--green);
+                 padding:9px 12px;border-radius:var(--radius);font-size:11px;font-family:var(--mono);" />
+        <button class="btn btn-accent" onclick="copyResetLink()">Copy</button>
+      </div>
+      <p style="font-size:11px;color:var(--muted);margin-top:8px;">⏱ Expires in 1 hour.</p>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="closeModal('modal-reset')">Done</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Toast -->
 <div id="toast"></div>
 
@@ -641,17 +696,19 @@
 let currentPanel = 'overview';
 let dissolveRelId = null;
 let erasureReqId  = null;
+let resetReqId    = null;
 
 const PANELS = {
-  overview:      { title: 'Overview',            sub: 'Platform health at a glance' },
-  safety:        { title: 'Safety Alerts',        sub: 'CRITICAL and HIGH priority capsules' },
-  backlog:       { title: 'Notification Backlog', sub: 'Therapists with unread crisis alerts' },
-  users:         { title: 'Users',                sub: 'Manage clients and therapists' },
-  relationships: { title: 'Relationships',        sub: 'Client-therapist pairings' },
-  crisis:        { title: 'Crisis Events',        sub: 'Platform-wide crisis log' },
-  'ai-audit':    { title: 'AI Audit',             sub: 'Capsules flagged by Granite analysis' },
-  erasure:       { title: 'Erasure Requests',     sub: 'GDPR right-to-erasure queue' },
-  logs:          { title: 'Activity Logs',        sub: 'Full audit trail' },
+  overview:          { title: 'Overview',            sub: 'Platform health at a glance' },
+  safety:            { title: 'Safety Alerts',        sub: 'CRITICAL and HIGH priority capsules' },
+  backlog:           { title: 'Notification Backlog', sub: 'Therapists with unread crisis alerts' },
+  users:             { title: 'Users',                sub: 'Manage clients and therapists' },
+  relationships:     { title: 'Relationships',        sub: 'Client-therapist pairings' },
+  crisis:            { title: 'Crisis Events',        sub: 'Platform-wide crisis log' },
+  'ai-audit':        { title: 'AI Audit',             sub: 'Capsules flagged by Granite analysis' },
+  erasure:           { title: 'Erasure Requests',     sub: 'GDPR right-to-erasure queue' },
+  'password-resets': { title: 'Password Resets',      sub: 'Admin-mediated password reset requests' },
+  logs:              { title: 'Activity Logs',        sub: 'Full audit trail' },
 };
 
 // ── NAVIGATION ──────────────────────────────────────────────
@@ -672,15 +729,16 @@ function refreshCurrent() { loadPanel(currentPanel); }
 
 function loadPanel(panel) {
   const loaders = {
-    overview:      loadOverview,
-    safety:        loadSafety,
-    backlog:       loadBacklog,
-    users:         loadUsers,
-    relationships: loadRelationships,
-    crisis:        loadCrisis,
-    'ai-audit':    loadAudit,
-    erasure:       loadErasure,
-    logs:          loadLogs,
+    overview:          loadOverview,
+    safety:            loadSafety,
+    backlog:           loadBacklog,
+    users:             loadUsers,
+    relationships:     loadRelationships,
+    crisis:            loadCrisis,
+    'ai-audit':        loadAudit,
+    erasure:           loadErasure,
+    'password-resets': loadPasswordResets,
+    logs:              loadLogs,
   };
   if (loaders[panel]) loaders[panel]();
   setLastRefresh();
@@ -742,12 +800,14 @@ async function loadOverview() {
       { label: 'CRITICAL Unrev.',   value: safety.critical_unreviewed,  sub: 'Need therapist review', cls: safety.critical_unreviewed > 0 ? 'red' : 'green' },
       { label: 'HIGH Unrev.',       value: safety.high_unreviewed,      sub: 'Need therapist review', cls: safety.high_unreviewed > 0 ? 'amber' : 'green' },
       { label: 'Crisis (30d)',       value: safety.crisis_this_month,    sub: `${safety.high_severity_crisis} high-severity`, cls: safety.high_severity_crisis > 0 ? 'amber' : '' },
-      { label: 'Erasure Queue',     value: compliance.pending_erasure_requests, sub: 'Pending GDPR requests', cls: compliance.pending_erasure_requests > 0 ? 'amber' : '' },
+      { label: 'Erasure Queue',     value: compliance.pending_erasure_requests, sub: 'Pending GDPR requests',    cls: compliance.pending_erasure_requests > 0 ? 'amber' : '' },
+      { label: 'Password Resets',   value: compliance.pending_password_resets,  sub: 'Awaiting admin approval',  cls: compliance.pending_password_resets  > 0 ? 'amber' : '' },
     ];
 
     // Update sidebar badges
-    setBadge('badge-safety', safety.critical_unreviewed + safety.high_unreviewed);
-    setBadge('badge-erasure', compliance.pending_erasure_requests);
+    setBadge('badge-safety',          safety.critical_unreviewed + safety.high_unreviewed);
+    setBadge('badge-erasure',         compliance.pending_erasure_requests);
+    setBadge('badge-password-resets', compliance.pending_password_resets);
 
     grid.innerHTML = cards.map(c => `
       <div class="stat-card ${c.cls}">
@@ -1099,6 +1159,105 @@ async function confirmErasure(action) {
     loadErasure();
     loadOverview(); // refresh stats
   } catch(e) { toast(e.message, 'err'); }
+}
+
+// ── PASSWORD RESET REQUESTS ───────────────────────────────────
+async function loadPasswordResets() {
+  const wrap   = document.getElementById('password-resets-table');
+  wrap.innerHTML = '<div class="loading"><div class="spinner"></div> Loading…</div>';
+  const status = document.getElementById('reset-status').value;
+  try {
+    const d = await api(`/api/password-reset-requests?status=${status}`);
+    setBadge('badge-password-resets', d.requests.filter(r => r.status === 'pending').length);
+
+    if (!d.requests.length) { wrap.innerHTML = emptyTable('No requests in this status'); return; }
+
+    wrap.innerHTML = `<table>
+      <thead><tr>
+        <th>User</th><th>Email</th><th>Status</th>
+        <th>Requested</th><th>Expires</th><th>Actions</th>
+      </tr></thead>
+      <tbody>${d.requests.map(r => {
+        let actions = '<span style="color:var(--muted);font-size:11px">—</span>';
+
+        if (r.status === 'pending') {
+          actions = `<button class="btn btn-accent" onclick="openResetModal(${r.id}, '${esc(r.user)}')">Review</button>`;
+        } else if (r.status === 'approved' && r.reset_link && !r.is_expired) {
+          // Link still valid — admin can re-copy without re-approving
+          actions = `<button class="btn btn-green" onclick="copyLinkDirect('${esc(r.reset_link)}')">⎘ Copy Link</button>`;
+        } else if (r.status === 'approved' && r.is_expired) {
+          // Token expired — admin needs to re-approve to generate a fresh one
+          actions = `<span class="badge badge-red" style="margin-right:6px;">Expired</span>
+                     <button class="btn btn-ghost" onclick="openResetModal(${r.id}, '${esc(r.user)}')">Re-approve</button>`;
+        }
+
+        return `<tr>
+          <td>${esc(r.user)}<br><span style="color:var(--muted);font-size:11px">ID ${r.user_id}</span></td>
+          <td style="font-family:var(--mono);font-size:11px">${esc(r.email)}</td>
+          <td>${resetStatusBadge(r.status)}</td>
+          <td style="font-family:var(--mono);font-size:11px;color:var(--muted)">${fmtDate(r.requested_at)}</td>
+          <td style="font-family:var(--mono);font-size:11px;color:var(--muted)">${fmtDate(r.expires_at)}</td>
+          <td>${actions}</td>
+        </tr>`;
+      }).join('')}
+      </tbody>
+    </table>`;
+  } catch(e) {
+    wrap.innerHTML = `<div class="loading">Failed to load</div>`;
+  }
+}
+
+function resetStatusBadge(s) {
+  const cls = { pending:'badge-amber', approved:'badge-accent', used:'badge-green', rejected:'badge-muted' };
+  return `<span class="badge ${cls[s] || 'badge-muted'}">${s}</span>`;
+}
+
+function openResetModal(reqId, userName) {
+  resetReqId = reqId;
+  document.getElementById('reset-modal-title').textContent = `Password Reset — ${userName}`;
+  document.getElementById('reset-modal-confirm').style.display = '';
+  document.getElementById('reset-modal-link').style.display    = 'none';
+  document.getElementById('reset-link-val').value = '';
+  openModal('modal-reset');
+}
+
+async function confirmResetApprove() {
+  try {
+    const d = await apiPost(`/api/password-reset-requests/${resetReqId}/approve`, {});
+    document.getElementById('reset-link-val').value         = d.reset_link;
+    document.getElementById('reset-modal-confirm').style.display = 'none';
+    document.getElementById('reset-modal-link').style.display    = '';
+    toast('Link generated — copy and share with the user', 'ok');
+    loadPasswordResets();
+    loadOverview();
+  } catch(e) { toast(e.message, 'err'); }
+}
+
+async function confirmResetReject() {
+  if (!confirm('Reject this password reset request?')) return;
+  try {
+    const d = await apiPost(`/api/password-reset-requests/${resetReqId}/reject`, {});
+    toast(d.message, 'ok');
+    closeModal('modal-reset');
+    loadPasswordResets();
+    loadOverview();
+  } catch(e) { toast(e.message, 'err'); }
+}
+
+function copyLinkDirect(link) {
+  navigator.clipboard.writeText(link)
+    .then(() => toast('Reset link copied to clipboard', 'ok'))
+    .catch(() => {
+      // Fallback: prompt so they can copy manually
+      window.prompt('Copy this reset link:', link);
+    });
+}
+
+function copyResetLink() {
+  const val = document.getElementById('reset-link-val').value;
+  navigator.clipboard.writeText(val)
+    .then(() => toast('Link copied to clipboard', 'ok'))
+    .catch(() => toast('Copy failed — select and copy manually', 'err'));
 }
 
 // ── ACTIVITY LOGS ────────────────────────────────────────────

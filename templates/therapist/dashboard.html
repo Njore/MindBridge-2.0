@@ -5,7 +5,7 @@
 {% block content %}
 <div class="container">
   <div class="card">
-    <h1>Therapist Dashboard</h1>
+    <h1>Welcome Back, {{ session.first_name }}! 👋</h1>
     <p style="color: var(--text-muted);">Manage your clients and therapeutic interventions</p>
   </div>
 
@@ -21,7 +21,7 @@
       <div style="font-size:3rem;margin-bottom:1rem;">📋</div>
       <h3>Pending Responses</h3>
       <p id="stat-responses" style="font-size:2.5rem;color:var(--warning);margin:1rem 0;">—</p>
-      <a href="/therapist/view-responses" class="btn btn-primary">Review</a>
+      <a href="/therapist/responses/all" class="btn btn-primary">Review</a>
     </div>
     <div class="card" style="text-align:center;">
       <div style="font-size:3rem;margin-bottom:1rem;">💌</div>

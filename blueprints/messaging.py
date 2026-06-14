@@ -3,6 +3,8 @@ from models import (db, Capsule, Message, MessageTag, MessageAttachment,
                     ClientTherapistRelationship, Notification, ActivityLog, User)
 from datetime import datetime, timedelta
 from services.sentiment_analyzer import analyzer
+from services.encryption import encrypt_content, decrypt_content
+from services.timezone import today_eat
 from threading import Thread
 import logging
 
@@ -55,7 +57,8 @@ def analyze_capsule_priority(capsule_id, app=None):
 
             # Extract message content (only client messages matter for priority)
             # But include all for context
-            message_texts = [m.content for m in messages]
+            # Content is stored encrypted at rest — decrypt before analysis
+            message_texts = [decrypt_content(m.content) for m in messages]
 
             logger.info(f"Analyzing capsule {capsule_id} with {len(message_texts)} messages")
 
@@ -162,7 +165,7 @@ def create_capsule():
             client_id=user_id,
             therapist_id=data['therapist_id'],
             relationship_id=relationship.relationship_id,
-            title=data.get('title', f"Capsule - {datetime.utcnow().strftime('%Y-%m-%d')}"),
+            title=data.get('title', f"Capsule - {today_eat().isoformat()}"),
             user_tag=data.get('user_tag', 'general'),
             status='open',
             priority_level='LOW',  # Default priority
@@ -177,7 +180,7 @@ def create_capsule():
             message = Message(
                 capsule_id=capsule.capsule_id,
                 sender_id=user_id,
-                content=first_message
+                content=encrypt_content(first_message)
             )
             db.session.add(message)
             db.session.commit()
@@ -207,7 +210,10 @@ def get_capsules():
     user_id = session['user_id']
     user_type = session['user_type']
 
-    status = request.args.get('status')
+    status = request.args.get('status')         # open | sealed | archived
+    read_filter = request.args.get('read')      # 'read' | 'unread' (therapist tabs)
+    client_filter = request.args.get('client_id', type=int)   # filter by client
+    priority_filter = request.args.get('priority')            # CRITICAL|HIGH|MEDIUM|LOW
     sort_by_priority = request.args.get('sort_by_priority', 'false').lower() == 'true'
 
     if user_type == 'client':
@@ -219,9 +225,20 @@ def get_capsules():
     if status:
         query = query.filter_by(status=status)
 
-    capsules = query.order_by(Capsule.created_at.desc()).limit(50).all()
+    # Therapist-only filters
+    if user_type == 'therapist':
+        if client_filter:
+            query = query.filter_by(client_id=client_filter)
+        if priority_filter:
+            query = query.filter_by(priority_level=priority_filter.upper())
+        if read_filter == 'read':
+            query = query.filter_by(therapist_read=True)
+        elif read_filter == 'unread':
+            query = query.filter_by(therapist_read=False)
 
-    # For therapists, sort by priority if requested
+    capsules = query.order_by(Capsule.created_at.desc()).limit(100).all()
+
+    # For therapists, sort by priority
     if user_type == 'therapist' and sort_by_priority:
         priority_order = {'CRITICAL': 0, 'HIGH': 1, 'MEDIUM': 2, 'LOW': 3}
         capsules.sort(key=lambda c: priority_order.get(c.priority_level or 'LOW', 3))
@@ -231,22 +248,36 @@ def get_capsules():
     client_map = {}
     if client_ids:
         clients = User.query.filter(User.user_id.in_(client_ids)).all()
-        client_map = {u.user_id: f"{u.first_name} {u.last_name}" for u in clients}
+        client_map = {u.user_id: (f"{u.first_name} {u.last_name}", u.user_id) for u in clients}
+
+    # Determine is_read per capsule per viewer
+    def capsule_is_read(c):
+        if user_type == 'therapist':
+            return bool(getattr(c, 'therapist_read', False))
+        else:
+            return bool(getattr(c, 'client_read', False))
 
     return jsonify({
         'capsules': [{
             'capsule_id': c.capsule_id,
             'client_id': c.client_id,
-            'client_name': client_map.get(c.client_id, 'Unknown Client'),
+            'client_name': client_map.get(c.client_id, ('Unknown Client', c.client_id))[0] if client_map.get(c.client_id) else 'Unknown Client',
             'therapist_id': c.therapist_id,
             'title': c.title,
             'user_tag': c.user_tag,
             'status': c.status,
             'priority_level': c.priority_level or 'LOW',
             'priority_score': float(c.priority_score) if c.priority_score else 0,
+            'priority_reasons': c.priority_reasons,
+            'is_read': capsule_is_read(c),
             'created_at': c.created_at.isoformat(),
             'sealed_at': c.sealed_at.isoformat() if c.sealed_at else None
-        } for c in capsules]
+        } for c in capsules],
+        # Return distinct clients for therapist filter dropdown
+        'clients': [
+            {'user_id': uid, 'name': name}
+            for uid, (name, _) in (client_map.items() if user_type == 'therapist' else {}.items())
+        ] if user_type == 'therapist' else []
     }), 200
 
 
@@ -287,7 +318,7 @@ def get_capsule(capsule_id):
         'messages': [{
             'message_id': m.message_id,
             'sender_id': m.sender_id,
-            'content': m.content,
+            'content': decrypt_content(m.content),
             'created_at': m.created_at.isoformat()
         } for m in messages]
     }), 200
@@ -388,9 +419,19 @@ def create_message(capsule_id):
         message = Message(
             capsule_id=capsule_id,
             sender_id=user_id,
-            content=data['content']
+            content=encrypt_content(data['content'])
         )
         db.session.add(message)
+        db.session.commit()
+
+        # Mark capsule as unread for the recipient when a new message arrives
+        if user_id == capsule.client_id:
+            # Client sent → therapist hasn't read it
+            capsule.therapist_read = False
+        else:
+            # Therapist sent → client hasn't read it; also mark therapist as having read it
+            capsule.client_read = False
+            capsule.therapist_read = True
         db.session.commit()
 
         # Notify the other party
@@ -531,6 +572,7 @@ def get_prioritized_capsules():
             .order_by(Message.created_at.asc())
             .first()
         )
+        first_message_content = decrypt_content(first_message.content) if first_message else ''
 
         result.append({
             'capsule_id': capsule.capsule_id,
@@ -541,8 +583,8 @@ def get_prioritized_capsules():
             'priority_reasons': capsule.priority_reasons,
             'priority_analyzed_at': capsule.priority_analyzed_at.isoformat() if capsule.priority_analyzed_at else None,
             'message_count': message_count,
-            'first_message_preview': first_message.content[:100] + '...' if first_message and len(
-                first_message.content) > 100 else (first_message.content if first_message else ''),
+            'first_message_preview': first_message_content[:100] + '...' if len(
+                first_message_content) > 100 else first_message_content,
             'last_message_at': last_message.created_at.isoformat() if last_message else None,
             'status': capsule.status,
             'sealed_at': capsule.sealed_at.isoformat() if capsule.sealed_at else None
@@ -575,7 +617,7 @@ def reanalyze_capsule(capsule_id):
         return jsonify({'error': 'No messages in this capsule to analyze'}), 400
 
     try:
-        message_texts = [m.content for m in messages]
+        message_texts = [decrypt_content(m.content) for m in messages]
         analysis = analyzer.analyze_capsule_messages(message_texts)
 
         # Overwrite whatever was stored before
@@ -632,6 +674,48 @@ def reanalyze_capsule(capsule_id):
     except Exception as e:
         logger.error(f"Reanalysis failed for capsule {capsule_id}: {str(e)}", exc_info=True)
         return jsonify({'error': 'Analysis failed. Is Ollama running?'}), 500
+
+@messaging_bp.route('/capsules/<int:capsule_id>/mark-read', methods=['POST'])
+@require_auth()
+def mark_capsule_read(capsule_id):
+    """Mark a capsule as read for the current user (client or therapist)"""
+    user_id = session['user_id']
+    user_type = session['user_type']
+
+    capsule = Capsule.query.get(capsule_id)
+    if not capsule:
+        return jsonify({'error': 'Capsule not found'}), 404
+
+    if capsule.client_id != user_id and capsule.therapist_id != user_id:
+        return jsonify({'error': 'Access denied'}), 403
+
+    if user_type == 'therapist':
+        capsule.therapist_read = True
+    else:
+        capsule.client_read = True
+
+    db.session.commit()
+    return jsonify({'message': 'Marked as read'}), 200
+
+
+@messaging_bp.route('/api/therapist/clients', methods=['GET'])
+@require_auth()
+def get_therapist_clients():
+    """Return distinct clients for the therapist's filter dropdown"""
+    user_id = session['user_id']
+    if session.get('user_type') != 'therapist':
+        return jsonify({'error': 'Access denied'}), 403
+
+    relationships = ClientTherapistRelationship.query.filter_by(
+        therapist_id=user_id, status='active'
+    ).all()
+    client_ids = [r.client_id for r in relationships]
+    clients = User.query.filter(User.user_id.in_(client_ids)).all()
+
+    return jsonify({
+        'clients': [{'user_id': u.user_id, 'name': f"{u.first_name} {u.last_name}"} for u in clients]
+    }), 200
+
 
 @messaging_bp.route('/api/therapist/capsules/<int:capsule_id>/mark-reviewed', methods=['POST'])
 @require_auth()

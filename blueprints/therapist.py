@@ -1,7 +1,9 @@
 from flask import Blueprint, request, jsonify, session, render_template, redirect
 from models import (db, User, ClientTherapistRelationship, Capsule, Message,
                     TherapeuticPrompt, PromptResponse, Notification, ActivityLog)
-from datetime import datetime, date
+from datetime import datetime
+from services.encryption import encrypt_content, decrypt_content
+from services.timezone import today_eat
 import logging
 
 therapist_bp = Blueprint('therapist', __name__)
@@ -124,6 +126,13 @@ def search_clients():
     if len(query_str) < 2:
         return jsonify({'error': 'Search query must be at least 2 characters'}), 400
 
+    # Client IDs that already have an ACTIVE relationship with ANY therapist
+    actively_connected_ids = {
+        r.client_id for r in ClientTherapistRelationship.query.filter_by(
+            status='active'
+        ).all()
+    }
+
     results = User.query.filter(
         User.user_type == 'client',
         User.is_active == True,
@@ -134,21 +143,17 @@ def search_clients():
         )
     ).limit(10).all()
 
-    # IDs already connected to this therapist (any status)
-    existing_ids = {
-        r.client_id for r in ClientTherapistRelationship.query.filter_by(
-            therapist_id=therapist_id
-        ).all()
-    }
-
     users = []
     for u in results:
+        if u.user_id in actively_connected_ids:
+            continue  # already connected to a therapist, not searchable
+
         users.append({
             'user_id': u.user_id,
             'first_name': u.first_name,
             'last_name': u.last_name,
             'email': u.email,
-            'already_connected': u.user_id in existing_ids
+            'already_connected': False
         })
 
     return jsonify({'results': users}), 200
@@ -172,14 +177,13 @@ def connect_client():
     if not client:
         return jsonify({'error': 'Client not found'}), 404
 
-    # Prevent duplicate active relationships
+    # Prevent connecting a client who is already actively connected to ANY therapist
     existing = ClientTherapistRelationship.query.filter_by(
         client_id=client_id,
-        therapist_id=therapist_id,
         status='active'
     ).first()
     if existing:
-        return jsonify({'error': 'An active relationship with this client already exists'}), 409
+        return jsonify({'error': 'This client is already connected to a therapist'}), 409
 
     # Re-activate a previously ended relationship if one exists
     ended = ClientTherapistRelationship.query.filter_by(
@@ -191,7 +195,7 @@ def connect_client():
     try:
         if ended:
             ended.status = 'active'
-            ended.relationship_start_date = date.today()
+            ended.relationship_start_date = today_eat()
             ended.relationship_end_date = None
             ended.client_goals = data.get('client_goals', ended.client_goals)
             ended.updated_at = datetime.utcnow()
@@ -201,7 +205,7 @@ def connect_client():
                 client_id=client_id,
                 therapist_id=therapist_id,
                 status='active',
-                relationship_start_date=date.today(),
+                relationship_start_date=today_eat(),
                 client_goals=data.get('client_goals', '')
             )
             db.session.add(relationship)
@@ -267,10 +271,10 @@ def disconnect_client(client_id):
 
     try:
         relationship.status = 'ended'
-        relationship.relationship_end_date = date.today()
+        relationship.relationship_end_date = today_eat()
         if data.get('reason'):
             relationship.therapist_notes = (relationship.therapist_notes or '') + \
-                                           f'\n[Ended {date.today().isoformat()}]: {data["reason"]}'
+                                           f'\n[Ended {today_eat().isoformat()}]: {data["reason"]}'
         relationship.updated_at = datetime.utcnow()
 
         notification = Notification(
@@ -302,9 +306,17 @@ def disconnect_client(client_id):
 
 
 @therapist_bp.route('/clients/<int:client_id>', methods=['GET'])
+def client_detail_page(client_id):
+    """Render the client detail page"""
+    if 'user_id' not in session or session.get('user_type') != 'therapist':
+        return redirect('/auth/login')
+    return render_template('therapist/client_detail.html', client_id=client_id)
+
+
+@therapist_bp.route('/api/clients/<int:client_id>', methods=['GET'])
 @require_therapist()
 def get_client_detail(client_id):
-    """Get detailed info for a specific client"""
+    """Get detailed info for a specific client (JSON API)"""
     therapist_id = session['user_id']
 
     # Verify relationship exists
@@ -456,6 +468,8 @@ def get_prioritized_capsules():
         # Get client object for more details
         client = User.query.get(capsule.client_id)
 
+        first_message_content = decrypt_content(first_message.content) if first_message else ''
+
         result.append({
             'capsule_id': capsule.capsule_id,
             'title': capsule.title,
@@ -468,8 +482,8 @@ def get_prioritized_capsules():
             'priority_analyzed_at': capsule.priority_analyzed_at.isoformat() if capsule.priority_analyzed_at else None,
             'priority_reviewed_by_therapist': capsule.priority_reviewed_by_therapist,
             'message_count': message_count,
-            'first_message_preview': first_message.content[:150] + '...' if first_message and len(
-                first_message.content) > 150 else (first_message.content if first_message else ''),
+            'first_message_preview': first_message_content[:150] + '...' if len(
+                first_message_content) > 150 else first_message_content,
             'last_message_at': last_message.created_at.isoformat() if last_message else None,
             'status': capsule.status,
             'user_tag': capsule.user_tag,
@@ -570,7 +584,7 @@ def reanalyze_capsule(capsule_id):
             from flask import current_app
             with current_app.app_context():
                 messages = Message.query.filter_by(capsule_id=capsule_id).all()
-                message_texts = [m.content for m in messages]
+                message_texts = [decrypt_content(m.content) for m in messages]
 
                 analysis = analyzer.analyze_capsule_messages(message_texts)
 
@@ -624,7 +638,7 @@ def get_capsule_priority_details(capsule_id):
         'priority_reviewed_by_therapist': capsule.priority_reviewed_by_therapist,
         'message_count': len(messages),
         'messages': [{
-            'content': m.content,
+            'content': decrypt_content(m.content),
             'created_at': m.created_at.isoformat(),
             'sender_type': 'client' if m.sender_id == capsule.client_id else 'therapist'
         } for m in messages]
@@ -711,7 +725,7 @@ def get_capsule_detail(capsule_id):
         'messages': [{
             'message_id': m.message_id,
             'sender_id': m.sender_id,
-            'content': m.content,
+            'content': decrypt_content(m.content),
             'created_at': m.created_at.isoformat()
         } for m in messages]
     }), 200
@@ -844,6 +858,56 @@ def get_prompt_responses(prompt_id):
         } for r in responses]
     }), 200
 
+# Renders the page
+@therapist_bp.route('/responses/all', methods=['GET'])
+@require_therapist()
+def all_responses_page():
+    return render_template('therapist/all_responses.html')
+
+# Returns the JSON data
+@therapist_bp.route('/api/responses/all', methods=['GET'])
+@require_therapist()
+def get_all_responses():
+    therapist_id = session['user_id']
+
+    responses = PromptResponse.query\
+        .join(TherapeuticPrompt, PromptResponse.prompt_id == TherapeuticPrompt.prompt_id)\
+        .filter(
+            TherapeuticPrompt.therapist_id == therapist_id,
+            PromptResponse.is_shared_with_therapist == True
+        )\
+        .order_by(PromptResponse.created_at.desc())\
+        .all()
+
+    # Preload related clients and prompts to avoid per-row queries
+    client_ids = {r.client_id for r in responses}
+    prompt_ids = {r.prompt_id for r in responses}
+
+    clients = {u.user_id: u for u in User.query.filter(User.user_id.in_(client_ids)).all()} if client_ids else {}
+    prompts = {p.prompt_id: p for p in TherapeuticPrompt.query.filter(TherapeuticPrompt.prompt_id.in_(prompt_ids)).all()} if prompt_ids else {}
+
+    result = []
+    for r in responses:
+        client = clients.get(r.client_id)
+        prompt = prompts.get(r.prompt_id)
+
+        result.append({
+            'response_id': r.response_id,
+            'client_id': r.client_id,
+            'client_name': f"{client.first_name} {client.last_name}" if client else 'Unknown Client',
+            'prompt_title': prompt.title if prompt else 'Untitled Prompt',
+            'prompt_type': prompt.prompt_type if prompt else None,
+            'prompt_id': r.prompt_id,
+            'response_content': r.response_content,
+            'insights_gained': r.insights_gained,
+            'emotional_state': r.emotional_state,
+            'response_date': r.response_date.isoformat(),
+            'therapist_feedback': r.therapist_feedback
+        })
+
+    return jsonify({'responses': result}), 200
+
+
 
 @therapist_bp.route('/prompts/responses/<int:response_id>/feedback', methods=['PUT'])
 @require_therapist()
@@ -937,4 +1001,3 @@ def get_dashboard():
         }
 
     }), 200
-

@@ -18,7 +18,48 @@
 
             <div class="form-group">
                 <label for="password">Password</label>
-                <input type="password" id="password" name="password" class="form-control" required>
+                <div style="position: relative;">
+                    <input type="password" id="password" name="password" class="form-control" required style="padding-right: 3rem;">
+                    <button
+                        type="button"
+                        id="togglePassword"
+                        onclick="togglePasswordVisibility()"
+                        aria-label="Toggle password visibility"
+                        style="
+                            position: absolute;
+                            right: 0.75rem;
+                            top: 50%;
+                            transform: translateY(-50%);
+                            background: none;
+                            border: none;
+                            cursor: pointer;
+                            padding: 0;
+                            color: var(--text-muted);
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            line-height: 1;
+                        "
+                    >
+                        <!-- Eye icon (shown when password is hidden) -->
+                        <svg id="icon-eye" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M1
+                            12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                            <circle cx="12" cy="12" r="3"/>
+                        </svg>
+                        <!-- Eye-off icon (shown when password is visible) -->
+                        <svg id="icon-eye-off" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: none;">
+                            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+                            <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+                            <line x1="1" y1="1" x2="23" y2="23"/>
+                        </svg>
+                    </button>
+                </div>
+                <div style="text-align: right; margin-top: 0.4rem;">
+                    <a href="#" onclick="openForgotPassword(event)" style="font-size: 0.85rem; color: var(--text-muted); text-decoration: none;">
+                        Forgot password?
+                    </a>
+                </div>
             </div>
 
             <button type="submit" class="btn btn-primary" style="width: 100%; padding: 1rem; font-size: 1.1rem;">
@@ -38,4 +79,137 @@
         </div>
     </div>
 </div>
+
+
+<!-- Forgot Password Modal -->
+<div id="forgotPasswordModal" style="
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+">
+    <div style="
+        background: var(--card-bg, #fff);
+        border-radius: 0.75rem;
+        padding: 2rem;
+        max-width: 420px;
+        width: 90%;
+        box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        position: relative;
+    ">
+        <!-- Close button -->
+        <button onclick="closeForgotPassword()" style="
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: var(--text-muted);
+            font-size: 1.25rem;
+            line-height: 1;
+            padding: 0.25rem;
+        " aria-label="Close">&times;</button>
+
+        <!-- Default state -->
+        <div id="forgotForm">
+            <h3 style="margin: 0 0 0.5rem;">Reset Your Password</h3>
+            <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.5rem;">
+                Enter your email address and your request will be sent to the administrator, who will reset your password and get back to you.
+            </p>
+            <form action="/auth/forgot-password" method="POST" onsubmit="handleForgotSubmit(event)">
+                <div class="form-group" style="margin-bottom: 1.25rem;">
+                    <label for="resetEmail" style="display: block; margin-bottom: 0.4rem;">Email Address</label>
+                    <input type="email" id="resetEmail" name="email" class="form-control" required placeholder="you@example.com">
+                </div>
+                <button type="submit" class="btn btn-primary" style="width: 100%; padding: 0.85rem;">
+                    Send Reset Request
+                </button>
+            </form>
+        </div>
+
+        <!-- Success state -->
+        <div id="forgotSuccess" style="display: none; text-align: center; padding: 1rem 0;">
+            <div style="font-size: 3rem; margin-bottom: 1rem;">✅</div>
+            <h3 style="margin: 0 0 0.5rem;">Request Sent!</h3>
+            <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.5rem;">
+                Your request has been sent to the administrator.
+                Once they approve it, visit the link below to reset your password —
+                you won't need to log in.
+            </p>
+            <a href="/auth/check-reset" class="btn btn-primary" style="display:inline-block; padding: 0.75rem 1.5rem; margin-bottom: 0.75rem; text-decoration:none;">
+                Check Reset Status →
+            </a>
+            <p style="color: var(--text-muted); font-size: 0.8rem;">
+                Bookmark that page and come back after your admin has been notified.
+            </p>
+        </div>
+    </div>
+</div>
+
+
+<script>
+    // ── Show / Hide Password ──────────────────────────────────────────────────
+    function togglePasswordVisibility() {
+        const input   = document.getElementById('password');
+        const iconEye    = document.getElementById('icon-eye');
+        const iconEyeOff = document.getElementById('icon-eye-off');
+        const isHidden = input.type === 'password';
+
+        input.type = isHidden ? 'text' : 'password';
+        iconEye.style.display    = isHidden ? 'none'  : '';
+        iconEyeOff.style.display = isHidden ? ''      : 'none';
+    }
+
+    // ── Forgot Password Modal ─────────────────────────────────────────────────
+    const modal = document.getElementById('forgotPasswordModal');
+
+    function openForgotPassword(e) {
+        e.preventDefault();
+        // Reset to default state each time
+        document.getElementById('forgotForm').style.display    = '';
+        document.getElementById('forgotSuccess').style.display = 'none';
+        document.getElementById('resetEmail').value = '';
+        modal.style.display = 'flex';
+    }
+
+    function closeForgotPassword() {
+        modal.style.display = 'none';
+    }
+
+    // Close modal when clicking the backdrop
+    modal.addEventListener('click', function(e) {
+        if (e.target === modal) closeForgotPassword();
+    });
+
+    // Close modal on Escape key
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && modal.style.display === 'flex') closeForgotPassword();
+    });
+
+    function handleForgotSubmit(e) {
+        e.preventDefault();
+        const email = document.getElementById('resetEmail').value;
+
+        // POST to the backend admin-notification route
+        fetch('/auth/forgot-password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email })
+        })
+        .then(res => {
+            // Show success regardless of response to avoid email enumeration
+            document.getElementById('forgotForm').style.display    = 'none';
+            document.getElementById('forgotSuccess').style.display = '';
+        })
+        .catch(() => {
+            // Still show success on network error (graceful degradation)
+            document.getElementById('forgotForm').style.display    = 'none';
+            document.getElementById('forgotSuccess').style.display = '';
+        });
+    }
+</script>
 {% endblock %}

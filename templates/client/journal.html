@@ -94,6 +94,59 @@
     background: var(--bg-light);
     border-radius: 12px;
   }
+  .tab-btn {
+  flex: 1;
+  padding: 0.65rem;
+  border: 2px solid var(--border);
+  background: var(--bg-light);
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: var(--text-muted);
+}
+.tab-btn.active {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+}
+.past-week-block {
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  margin-bottom: 1rem;
+  overflow: hidden;
+}
+.past-week-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.85rem 1.25rem;
+  background: var(--bg-light);
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--primary-dark);
+}
+.past-week-header:hover { background: var(--border); }
+.past-week-body { display: none; padding: 1rem 1.25rem; }
+.past-week-body.open { display: block; }
+.past-day-row {
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.past-day-row:last-child { border-bottom: none; }
+.past-day-label {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--primary);
+  margin-bottom: 0.3rem;
+}
+.past-day-content {
+  font-size: 0.9rem;
+  color: var(--text-dark);
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+.past-day-empty { font-size: 0.85rem; color: var(--text-muted); font-style: italic; }
 </style>
 {% endblock %}
 
@@ -109,22 +162,39 @@
       <strong>🔒 100% Private:</strong> These entries are encrypted and NEVER shared with anyone, including your therapist.
     </div>
 
-    <!-- Week navigation -->
-    <div class="week-nav">
-      <button id="prev-week-btn" class="btn btn-outline" style="padding:0.5rem 1rem;">← Previous Week</button>
-      <div style="text-align:center;">
-        <div style="font-weight:600;font-size:1.05rem;" id="week-label">Loading...</div>
-        <div style="font-size:0.85rem;color:var(--text-muted);" id="week-sublabel"></div>
-      </div>
-      <button id="next-week-btn" class="btn btn-outline" style="padding:0.5rem 1rem;" disabled>Next Week →</button>
+    <!-- Tabs -->
+    <div style="display:flex;gap:0.5rem;margin-bottom:1.5rem;">
+      <button class="tab-btn active" id="tab-current" onclick="switchTab('current')">📝 This Week</button>
+      <button class="tab-btn" id="tab-past" onclick="switchTab('past')">📚 Past Entries</button>
     </div>
 
     <div id="alert-area"></div>
 
-    <!-- Pocket cards rendered by JS -->
-    <div id="pockets-container">
-      <p style="text-align:center;color:var(--text-muted);padding:2rem;">Loading your journal...</p>
+    <!-- Current week view -->
+    <div id="view-current">
+      <div class="week-nav">
+        <button id="prev-week-btn" class="btn btn-outline" style="padding:0.5rem 1rem;">← Previous Week</button>
+        <div style="text-align:center;">
+          <div style="font-weight:600;font-size:1.05rem;" id="week-label">Loading...</div>
+          <div style="font-size:0.85rem;color:var(--text-muted);" id="week-sublabel"></div>
+        </div>
+        <button id="next-week-btn" class="btn btn-outline" style="padding:0.5rem 1rem;" disabled>Next Week →</button>
+      </div>
+      <div id="pockets-container">
+        <p style="text-align:center;color:var(--text-muted);padding:2rem;">Loading your journal...</p>
+      </div>
     </div>
+
+    <!-- Past entries view -->
+    <div id="view-past" style="display:none;">
+      <div id="past-entries-container">
+        <p style="text-align:center;color:var(--text-muted);padding:2rem;">Loading past entries...</p>
+      </div>
+      <div id="past-load-more" style="text-align:center;margin-top:1rem;display:none;">
+        <button class="btn btn-outline" onclick="loadMoreWeeks()">Load more weeks</button>
+      </div>
+    </div>
+
   </div>
 </div>
 {% endblock %}
@@ -181,8 +251,8 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('next-week-btn').disabled = offset >= 0;
     document.getElementById('prev-week-btn').disabled = false;
 
-    // Fetch saved pockets for Mon and the week range
-    let savedMap = {}; // date+pocket_number -> content
+    // Fetch saved pockets for the week range
+    let savedMap = {}; // date_pocketNumber -> content
     try {
       const resp = await fetch(`/client/pockets/week-range?start=${dates[0]}&end=${dates[6]}`);
       if (resp.ok) {
@@ -305,6 +375,109 @@ document.addEventListener('DOMContentLoaded', () => {
       renderWeek(weekOffset);
     }
   });
+
+  // ── Tab switching ───────────────────────────────────────────────────────────
+  let pastLoaded = false;
+
+  window.switchTab = function(tab) {
+    const isCurrent = tab === 'current';
+    document.getElementById('view-current').style.display = isCurrent ? '' : 'none';
+    document.getElementById('view-past').style.display    = isCurrent ? 'none' : '';
+    document.getElementById('tab-current').classList.toggle('active', isCurrent);
+    document.getElementById('tab-past').classList.toggle('active', !isCurrent);
+    if (!isCurrent && !pastLoaded) {
+      pastLoaded = true;
+      loadPastEntries();
+    }
+  };
+
+  // ── Past entries ────────────────────────────────────────────────────────────
+  let pastWeekOffset = -1;   // start from last week going back
+
+  async function loadPastEntries(append = false) {
+    const NUM_WEEKS = 4;     // how many weeks to load per batch
+    const container  = document.getElementById('past-entries-container');
+    const loadMoreBtn = document.getElementById('past-load-more');
+
+    if (!append) {
+      container.innerHTML = '<p style="text-align:center;color:var(--text-muted);padding:2rem;">Loading...</p>';
+      pastWeekOffset = -1;
+    }
+
+    const weeks = [];
+    for (let i = 0; i < NUM_WEEKS; i++) {
+      weeks.push(getWeekDates(pastWeekOffset - i));
+    }
+    pastWeekOffset -= NUM_WEEKS;
+
+    // Fetch all weeks in parallel
+    const allPockets = await Promise.all(weeks.map(async (dates) => {
+      try {
+        const resp = await fetch(`/client/pockets/week-range?start=${dates[0]}&end=${dates[6]}`);
+        if (!resp.ok) return { dates, pockets: [] };
+        const data = await resp.json();
+        return { dates, pockets: data.pockets || [] };
+      } catch { return { dates, pockets: [] }; }
+    }));
+
+    // Filter out empty weeks (no entries at all)
+    const nonEmpty = allPockets.filter(w => w.pockets.length > 0);
+
+    if (!append) container.innerHTML = '';
+
+    if (nonEmpty.length === 0 && !append) {
+      container.innerHTML = '<p style="text-align:center;color:var(--text-muted);padding:2rem;">No past entries found.</p>';
+      loadMoreBtn.style.display = 'none';
+      return;
+    }
+
+    // Build a lookup: date_pocketNum -> content
+    nonEmpty.forEach(({ dates, pockets }) => {
+      const map = {};
+      pockets.forEach(p => { map[`${p.date}_${p.pocket_number}`] = p.content; });
+
+      const weekId = dates[0].replace(/-/g, '');
+      const hasAny = dates.some((d, i) => map[`${d}_${i + 1}`]);
+      if (!hasAny) return;
+
+      const weekHTML = `
+        <div class="past-week-block">
+          <div class="past-week-header" onclick="togglePastWeek('pw-${weekId}', this)">
+            <span>📅 ${formatDisplay(dates[0])} — ${formatDisplay(dates[6])}</span>
+            <span class="toggle-icon">▼</span>
+          </div>
+          <div class="past-week-body" id="pw-${weekId}">
+            ${dates.map((dateStr, i) => {
+              const pocketNum = i + 1;
+              const content = map[`${dateStr}_${pocketNum}`] || '';
+              return `
+                <div class="past-day-row">
+                  <div class="past-day-label">${DAYS[i]} · ${formatDisplay(dateStr)}</div>
+                  ${content
+                    ? `<div class="past-day-content">${escapeHtml(content)}</div>`
+                    : `<div class="past-day-empty">No entry</div>`}
+                </div>`;
+            }).join('')}
+          </div>
+        </div>`;
+
+      container.insertAdjacentHTML('beforeend', weekHTML);
+    });
+
+    loadMoreBtn.style.display = 'block';
+  }
+
+  window.loadMoreWeeks = function() { loadPastEntries(true); };
+
+  window.togglePastWeek = function(id, headerEl) {
+    const body = document.getElementById(id);
+    const isOpen = body.classList.toggle('open');
+    headerEl.querySelector('.toggle-icon').textContent = isOpen ? '▲' : '▼';
+  };
+
+  function escapeHtml(str) {
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
 
   // ── Boot ───────────────────────────────────────────────────────────────────
   renderWeek(0);

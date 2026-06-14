@@ -15,12 +15,70 @@
     justify-content: space-between;
     align-items: center;
     gap: 1rem;
+    position: relative;
   }
   .capsule-item:hover { border-color: var(--primary); box-shadow: 0 4px 12px var(--shadow); }
   .status-badge { display:inline-block;padding:0.25rem 0.75rem;border-radius:20px;font-size:0.8rem;font-weight:600; }
-  .status-open { background:rgba(123,165,145,0.2);color:var(--success); }
+  .status-open   { background:rgba(123,165,145,0.2);color:var(--success); }
   .status-sealed { background:rgba(139,123,139,0.2);color:var(--primary); }
   .status-archived { background:rgba(107,107,107,0.15);color:var(--text-muted); }
+
+  /* Unread dot */
+  .unread-dot {
+    width: 10px; height: 10px;
+    background: var(--primary);
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* Filter tabs */
+  .filter-tabs { display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:1.5rem; }
+  .filter-tab  { padding:0.45rem 1rem;border-radius:20px;border:2px solid var(--border);background:transparent;cursor:pointer;font-size:0.88rem;font-weight:500;transition:all 0.2s;white-space:nowrap; }
+  .filter-tab.active { background:var(--primary);color:white;border-color:var(--primary); }
+  .filter-tab .badge { display:inline-block;background:rgba(255,255,255,0.3);color:inherit;border-radius:10px;padding:0 0.45rem;font-size:0.78rem;margin-left:0.3rem; }
+  .filter-tab:not(.active) .badge { background:var(--primary);color:white; }
+
+  /* Status sub-tabs (priority) */
+  #status-subtabs .filter-tab.active[data-priority="CRITICAL"] { background:#dc2626;border-color:#dc2626; }
+  #status-subtabs .filter-tab.active[data-priority="HIGH"]     { background:#f59e0b;border-color:#f59e0b; }
+  #status-subtabs .filter-tab.active[data-priority="MEDIUM"]   { background:#eab308;border-color:#eab308; }
+  #status-subtabs .filter-tab.active[data-priority="LOW"]      { background:var(--success);border-color:var(--success); }
+
+  /* User cards (therapist "Users" tab) */
+  .user-card {
+    border: 2px solid var(--border);
+    border-radius: 12px;
+    padding: 1.1rem 1.5rem;
+    margin-bottom: 0.85rem;
+    cursor: pointer;
+    transition: all 0.3s;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+  }
+  .user-card:hover { border-color: var(--primary); box-shadow: 0 4px 12px var(--shadow); }
+  .user-card .user-meta { display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap; }
+  .user-card .unread-pill {
+    background:var(--primary);color:white;border-radius:10px;padding:0.1rem 0.6rem;font-size:0.78rem;font-weight:600;
+  }
+  .user-card .critical-pill {
+    background:#fee2e2;color:#dc2626;border-radius:10px;padding:0.1rem 0.6rem;font-size:0.78rem;font-weight:700;
+  }
+
+  /* Back link (drill-down views) */
+  .back-link {
+    display:inline-flex;align-items:center;gap:0.4rem;
+    color:var(--primary);cursor:pointer;font-weight:600;
+    margin-bottom:1rem;background:none;border:none;font-size:0.95rem;padding:0;
+  }
+  .back-link:hover { text-decoration:underline; }
+
+  /* Priority left-border colours */
+  .priority-CRITICAL { border-left:5px solid #dc2626; }
+  .priority-HIGH     { border-left:5px solid #f59e0b; }
+  .priority-MEDIUM   { border-left:5px solid #eab308; }
+  .priority-LOW      { border-left:5px solid var(--success); }
 </style>
 {% endblock %}
 
@@ -29,21 +87,42 @@
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;flex-wrap:wrap;gap:1rem;">
       <div>
-        <h1>💌 My Capsules</h1>
-        <p style="color:var(--text-muted);">24-hour communication windows with your therapist</p>
+        <h1>💌 {% if session.user_type == 'therapist' %}Client Capsules{% else %}My Capsules{% endif %}</h1>
+        <p style="color:var(--text-muted);">{% if session.user_type == 'therapist' %}Review and respond to client capsules{% else %}24-hour communication windows with your therapist{% endif %}</p>
       </div>
       {% if session.user_type == 'client' %}
       <a href="/client/create-capsule" class="btn btn-primary">➕ New Capsule</a>
       {% endif %}
     </div>
 
-    <!-- Filter tabs -->
-    <div style="display:flex;gap:0.5rem;margin-bottom:1.5rem;flex-wrap:wrap;">
-      <button class="btn btn-primary filter-btn" data-status="">All</button>
-      <button class="btn btn-outline filter-btn" data-status="open">Open</button>
-      <button class="btn btn-outline filter-btn" data-status="sealed">Sealed</button>
-      <button class="btn btn-outline filter-btn" data-status="archived">Archived</button>
+    <!-- ── CLIENT filter tabs ─────────────────────────────── -->
+    {% if session.user_type == 'client' %}
+    <div class="filter-tabs" id="client-tabs">
+      <button class="filter-tab active" data-status="">All <span class="badge" id="badge-all" style="display:none;"></span></button>
+      <button class="filter-tab" data-status="open">Open</button>
+      <button class="filter-tab" data-status="sealed">Sealed</button>
+      <button class="filter-tab" data-status="archived">Archived</button>
     </div>
+    {% endif %}
+
+    <!-- ── THERAPIST tabs ──────────────────────────── -->
+    {% if session.user_type == 'therapist' %}
+    <div class="filter-tabs" id="therapist-tabs">
+      <button class="filter-tab active" data-tab="all">All <span class="badge" id="badge-all" style="display:none;"></span></button>
+      <button class="filter-tab" data-tab="unread">Unread <span class="badge" id="badge-unread" style="display:none;"></span></button>
+      <button class="filter-tab" data-tab="read">Read</button>
+      <button class="filter-tab" data-tab="users">Users</button>
+      <button class="filter-tab" data-tab="status">Status</button>
+    </div>
+
+    <!-- Status sub-tabs: only shown when "Status" is the active main tab -->
+    <div class="filter-tabs" id="status-subtabs" style="display:none;">
+      <button class="filter-tab" data-priority="CRITICAL">🚨 Critical</button>
+      <button class="filter-tab" data-priority="HIGH">⚠️ High</button>
+      <button class="filter-tab" data-priority="MEDIUM">🔶 Medium</button>
+      <button class="filter-tab" data-priority="LOW">✅ Low</button>
+    </div>
+    {% endif %}
 
     <div id="alert-area"></div>
     <div id="capsules-container">
@@ -51,6 +130,7 @@
     </div>
   </div>
 
+  {% if session.user_type == 'client' %}
   <div class="card">
     <h3>About Capsules</h3>
     <div class="grid grid-2" style="margin-top:1rem;">
@@ -64,6 +144,7 @@
       </div>
     </div>
   </div>
+  {% endif %}
 </div>
 {% endblock %}
 
@@ -72,9 +153,17 @@
 document.addEventListener('DOMContentLoaded', () => {
 
   const userType = "{{ session.user_type }}";
-  let currentStatus = '';
 
-  // Priority config for therapist view
+  // Client-only state
+  let currentStatus   = '';   // client tab: open|sealed|archived|''
+
+  // Therapist-only state
+  let currentTab       = 'all';   // all | unread | read | users | status
+  let currentPriority  = '';      // CRITICAL|HIGH|MEDIUM|LOW (status sub-tab)
+  let usersDrilldown   = false;   // are we viewing a single user's capsules from the Users tab?
+  let currentClientId  = '';
+  let currentClientName = '';
+
   const priorityMeta = {
     CRITICAL: { color: '#dc2626', bg: '#fee2e2', icon: '🚨' },
     HIGH:     { color: '#f59e0b', bg: '#fed7aa', icon: '⚠️' },
@@ -82,86 +171,300 @@ document.addEventListener('DOMContentLoaded', () => {
     LOW:      { color: 'var(--success)', bg: 'rgba(123,165,145,0.1)', icon: '✅' }
   };
 
-  async function loadCapsules(status = '') {
+  function escapeHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+  function formatDate(s) {
+    return new Date(s).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' });
+  }
+
+  // ── Load capsules ─────────────────────────────────────────────────────────
+  async function loadCapsules() {
     const container = document.getElementById('capsules-container');
     container.innerHTML = `<p style="text-align:center;padding:2rem;color:var(--text-muted);">Loading...</p>`;
 
     try {
-      // Therapists always get priority-sorted results
+      // ── THERAPIST: "Users" tab, top-level list of users ──────────────────
+      if (userType === 'therapist' && currentTab === 'users' && !usersDrilldown) {
+        await loadUsersList(container);
+        return;
+      }
+
       const params = new URLSearchParams();
-      if (status) params.set('status', status);
-      if (userType === 'therapist') params.set('sort_by_priority', 'true');
-      const url = '/messaging/capsules' + (params.toString() ? '?' + params.toString() : '');
+      if (userType === 'client') {
+        if (currentStatus) params.set('status', currentStatus);
+      } else {
+        params.set('sort_by_priority', 'true');
 
-      const resp = await fetch(url);
+        if (currentTab === 'unread') {
+          params.set('read', 'unread');
+        } else if (currentTab === 'read') {
+          params.set('read', 'read');
+        }
+        // 'all' and 'status' show capsules regardless of read state
+
+        if (currentTab === 'users' && usersDrilldown && currentClientId) {
+          params.set('client_id', currentClientId);
+        }
+
+        if (currentTab === 'status' && currentPriority) {
+          params.set('priority', currentPriority);
+        }
+      }
+
+      const resp = await fetch('/messaging/capsules?' + params.toString());
       const data = await resp.json();
-
       if (!resp.ok) { container.innerHTML = `<p style="color:var(--danger);text-align:center;padding:2rem;">${data.error}</p>`; return; }
 
-      if (data.capsules.length === 0) {
-        container.innerHTML = `
+      const capsules = data.capsules;
+
+      if (userType === 'therapist') {
+        updateBadges(capsules, currentTab);
+      } else {
+        updateClientBadge(capsules);
+      }
+
+      if (capsules.length === 0) {
+        const backButton = (userType === 'therapist' && currentTab === 'users' && usersDrilldown)
+          ? `<button class="back-link" onclick="backToUsers()">← Back to Users</button>
+             <h3 style="margin-bottom:1rem;">👤 ${escapeHtml(currentClientName)}</h3>`
+          : '';
+        container.innerHTML = backButton + `
           <div style="text-align:center;padding:3rem;color:var(--text-muted);">
             <div style="font-size:4rem;margin-bottom:1rem;">📭</div>
-            <h3>No capsules yet</h3>
-            <p>Create your first capsule to start communicating with your therapist.</p>
-            ${ '{{ session.user_type }}' === 'client' ? '<a href="/client/create-capsule" class="btn btn-primary" style="margin-top:1rem;">Create Capsule</a>' : '' }
+            <h3>No capsules here</h3>
+            <p>${userType === 'client' ? 'Create your first capsule to start communicating with your therapist.' : 'No capsules match your filters.'}</p>
+            ${userType === 'client' ? '<a href="/client/create-capsule" class="btn btn-primary" style="margin-top:1rem;">Create Capsule</a>' : ''}
           </div>`;
         return;
       }
 
-      container.innerHTML = data.capsules.map(c => {
-        const pm = priorityMeta[c.priority_level] || priorityMeta.LOW;
-
-        // Therapist view: priority-first card with coloured left border
-        const therapistPriorityStyle = userType === 'therapist'
-          ? `border-left: 5px solid ${pm.color};`
-          : '';
-        const priorityBadge = userType === 'therapist'
-          ? `<span style="background:${pm.bg};color:${pm.color};padding:0.2rem 0.6rem;border-radius:20px;font-size:0.78rem;font-weight:700;">${pm.icon} ${c.priority_level}</span>`
-          : '';
-
-        return `
-          <div class="capsule-item" style="${therapistPriorityStyle}" onclick="window.location='/messaging/conversation/${c.capsule_id}'">
-            <div style="flex:1;">
-              <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.25rem;flex-wrap:wrap;">
-                <strong>${escapeHtml(c.title)}</strong>
-                <span class="status-badge status-${c.status}">${c.status.toUpperCase()}</span>
-                <span style="background:var(--bg-light);padding:0.2rem 0.5rem;border-radius:8px;font-size:0.8rem;">${c.user_tag}</span>
-                ${priorityBadge}
-              </div>
-              <div style="color:var(--text-muted);font-size:0.85rem;">
-                ${userType === 'therapist' ? `<span style="font-weight:500;color:var(--text-dark);">👤 ${escapeHtml(c.client_name || 'Unknown')}</span> &middot; ` : ''}
-                Created ${formatDate(c.created_at)}
-                ${c.sealed_at ? ` · Sealed ${formatDate(c.sealed_at)}` : ''}
-              </div>
-            </div>
-            <div style="color:var(--primary);font-size:1.2rem;">→</div>
-          </div>`;
-      }).join('');
+      if (userType === 'client') {
+        renderClientView(capsules, container);
+      } else {
+        renderTherapistFlatList(capsules, container);
+      }
 
     } catch (e) {
       container.innerHTML = `<p style="color:var(--danger);text-align:center;padding:2rem;">Failed to load capsules.</p>`;
     }
   }
 
-  // Filter buttons
-  document.querySelectorAll('.filter-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.filter-btn').forEach(b => {
-        b.className = 'btn btn-outline filter-btn';
-      });
-      btn.className = 'btn btn-primary filter-btn';
-      currentStatus = btn.dataset.status;
-      loadCapsules(currentStatus);
-    });
-  });
-
-  function escapeHtml(str) {
-    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  // ── CLIENT view ──────────────────────────────────────────────────────────
+  function renderClientView(capsules, container) {
+    container.innerHTML = capsules.map(c => {
+      const unreadDot = !c.is_read ? `<span class="unread-dot" title="New message"></span>` : '';
+      return `
+        <div class="capsule-item" onclick="window.location='/messaging/conversation/${c.capsule_id}'">
+          ${unreadDot}
+          <div style="flex:1;">
+            <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.25rem;flex-wrap:wrap;">
+              <strong style="${!c.is_read ? 'color:var(--primary);' : ''}">${escapeHtml(c.title)}</strong>
+              <span class="status-badge status-${c.status}">${c.status.toUpperCase()}</span>
+              <span style="background:var(--bg-light);padding:0.2rem 0.5rem;border-radius:8px;font-size:0.8rem;">${c.user_tag}</span>
+            </div>
+            <div style="color:var(--text-muted);font-size:0.85rem;">
+              Created ${formatDate(c.created_at)}
+              ${c.sealed_at ? ` · Sealed ${formatDate(c.sealed_at)}` : ''}
+            </div>
+          </div>
+          <div style="color:var(--primary);font-size:1.2rem;">→</div>
+        </div>`;
+    }).join('');
   }
 
-  function formatDate(str) {
-    return new Date(str).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' });
+  function updateClientBadge(capsules) {
+    const unreadCount = capsules.filter(c => !c.is_read).length;
+    const badgeAll = document.getElementById('badge-all');
+    if (badgeAll) {
+      if (unreadCount > 0 && currentStatus === '') {
+        badgeAll.textContent = unreadCount;
+        badgeAll.style.display = 'inline-block';
+      } else {
+        badgeAll.style.display = 'none';
+      }
+    }
+  }
+
+  // ── THERAPIST: single capsule item markup ───────────────────────────────
+  function capsuleItemHtml(c) {
+    const pm = priorityMeta[c.priority_level] || priorityMeta.LOW;
+    const unreadDot = !c.is_read ? `<span class="unread-dot" title="Unread"></span>` : '';
+    const priorityBadge = `<span style="background:${pm.bg};color:${pm.color};padding:0.2rem 0.6rem;border-radius:20px;font-size:0.78rem;font-weight:700;">${pm.icon} ${c.priority_level}</span>`;
+
+    return `
+      <div class="capsule-item priority-${c.priority_level}" onclick="window.location='/messaging/conversation/${c.capsule_id}'">
+        ${unreadDot}
+        <div style="flex:1;">
+          <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.25rem;flex-wrap:wrap;">
+            <strong style="${!c.is_read ? 'color:var(--primary);' : ''}">${escapeHtml(c.title)}</strong>
+            <span class="status-badge status-${c.status}">${c.status.toUpperCase()}</span>
+            <span style="background:var(--bg-light);padding:0.2rem 0.5rem;border-radius:8px;font-size:0.8rem;">${c.user_tag}</span>
+            ${priorityBadge}
+          </div>
+          <div style="color:var(--text-muted);font-size:0.85rem;">
+            <span style="font-weight:500;color:var(--text-dark);">👤 ${escapeHtml(c.client_name)}</span> &middot;
+            Created ${formatDate(c.created_at)}
+            ${c.sealed_at ? ` · Sealed ${formatDate(c.sealed_at)}` : ''}
+          </div>
+        </div>
+        <div style="color:var(--primary);font-size:1.2rem;">→</div>
+      </div>`;
+  }
+
+  // ── THERAPIST: flat list (All / Unread / Read / Status / Users drill-down) ─
+  function renderTherapistFlatList(capsules, container) {
+    let html = '';
+
+    if (currentTab === 'users' && usersDrilldown) {
+      html += `<button class="back-link" onclick="backToUsers()">← Back to Users</button>
+               <h3 style="margin-bottom:1rem;">👤 ${escapeHtml(currentClientName)}</h3>`;
+    }
+
+    html += capsules.map(capsuleItemHtml).join('');
+    container.innerHTML = html;
+  }
+
+  // ── THERAPIST: "Users" tab — list of clients ─────────────────────────────
+  async function loadUsersList(container) {
+    try {
+      const resp = await fetch('/messaging/capsules?sort_by_priority=true');
+      const data = await resp.json();
+      if (!resp.ok) { container.innerHTML = `<p style="color:var(--danger);text-align:center;padding:2rem;">${data.error}</p>`; return; }
+
+      const capsules = data.capsules;
+      updateBadges(capsules, 'all');
+
+      // Group by client
+      const groups = {};
+      const order = [];
+      capsules.forEach(c => {
+        if (!groups[c.client_id]) {
+          groups[c.client_id] = { name: c.client_name, total: 0, unread: 0, critical: 0 };
+          order.push(c.client_id);
+        }
+        const g = groups[c.client_id];
+        g.total++;
+        if (!c.is_read) g.unread++;
+        if (c.priority_level === 'CRITICAL') g.critical++;
+      });
+
+      if (order.length === 0) {
+        container.innerHTML = `
+          <div style="text-align:center;padding:3rem;color:var(--text-muted);">
+            <div style="font-size:4rem;margin-bottom:1rem;">📭</div>
+            <h3>No clients yet</h3>
+            <p>Capsules from your clients will appear here.</p>
+          </div>`;
+        return;
+      }
+
+      container.innerHTML = order.map(clientId => {
+        const g = groups[clientId];
+        const unreadPill = g.unread > 0 ? `<span class="unread-pill">${g.unread} unread</span>` : '';
+        const criticalPill = g.critical > 0 ? `<span class="critical-pill">🚨 ${g.critical} critical</span>` : '';
+        return `
+          <div class="user-card" onclick="openUserCapsules(${clientId}, '${escapeHtml(g.name).replace(/'/g, "\\'")}')">
+            <div class="user-meta">
+              <strong>👤 ${escapeHtml(g.name)}</strong>
+              <span style="color:var(--text-muted);font-size:0.85rem;">${g.total} capsule${g.total !== 1 ? 's' : ''}</span>
+              ${unreadPill}
+              ${criticalPill}
+            </div>
+            <div style="color:var(--primary);font-size:1.2rem;">→</div>
+          </div>`;
+      }).join('');
+
+    } catch (e) {
+      container.innerHTML = `<p style="color:var(--danger);text-align:center;padding:2rem;">Failed to load clients.</p>`;
+    }
+  }
+
+  window.openUserCapsules = function(clientId, clientName) {
+    currentClientId = clientId;
+    currentClientName = clientName;
+    usersDrilldown = true;
+    loadCapsules();
+  };
+
+  window.backToUsers = function() {
+    usersDrilldown = false;
+    currentClientId = '';
+    currentClientName = '';
+    loadCapsules();
+  };
+
+  // ── THERAPIST: badges ────────────────────────────────────────────────────
+  function updateBadges(capsules, basis) {
+    const badgeAll = document.getElementById('badge-all');
+    const badgeUnread = document.getElementById('badge-unread');
+
+    if (basis === 'all') {
+      const unread = capsules.filter(c => !c.is_read).length;
+      if (badgeAll) {
+        if (unread > 0) { badgeAll.textContent = unread; badgeAll.style.display = 'inline-block'; }
+        else badgeAll.style.display = 'none';
+      }
+      if (badgeUnread) {
+        if (unread > 0) { badgeUnread.textContent = unread; badgeUnread.style.display = 'inline-block'; }
+        else badgeUnread.style.display = 'none';
+      }
+    } else if (basis === 'unread') {
+      if (badgeUnread) {
+        if (capsules.length > 0) { badgeUnread.textContent = capsules.length; badgeUnread.style.display = 'inline-block'; }
+        else badgeUnread.style.display = 'none';
+      }
+    }
+    // 'read' and 'status' bases don't change the unread badges
+  }
+
+  // ── Filter tab wiring ─────────────────────────────────────────────────────
+  if (userType === 'client') {
+    document.querySelectorAll('#client-tabs .filter-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#client-tabs .filter-tab').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentStatus = btn.dataset.status;
+        loadCapsules();
+      });
+    });
+  } else {
+    const statusSubtabs = document.getElementById('status-subtabs');
+
+    document.querySelectorAll('#therapist-tabs .filter-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#therapist-tabs .filter-tab').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+
+        currentTab = btn.dataset.tab;
+        usersDrilldown = false;
+        currentClientId = '';
+        currentClientName = '';
+
+        if (currentTab === 'status') {
+          statusSubtabs.style.display = 'flex';
+          if (!currentPriority) {
+            currentPriority = 'CRITICAL';
+            document.querySelectorAll('#status-subtabs .filter-tab').forEach(b => {
+              b.classList.toggle('active', b.dataset.priority === currentPriority);
+            });
+          }
+        } else {
+          statusSubtabs.style.display = 'none';
+        }
+
+        loadCapsules();
+      });
+    });
+
+    document.querySelectorAll('#status-subtabs .filter-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#status-subtabs .filter-tab').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentPriority = btn.dataset.priority;
+        loadCapsules();
+      });
+    });
   }
 
   loadCapsules();

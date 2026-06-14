@@ -1,10 +1,13 @@
 from flask import Blueprint, request, jsonify, session, render_template, redirect
 from models import (db, User, Capsule, Message, ClientTherapistRelationship,
                     CrisisEvent, Notification, ActivityLog, ConsentAgreement,
-                    DataErasureRequest)
+                    DataErasureRequest, PasswordResetRequest)
 from datetime import datetime, timedelta
+from services.timezone import today_eat
 from sqlalchemy import func
+from flask import url_for
 import logging
+import secrets
 
 admin_bp = Blueprint('admin', __name__)
 logger = logging.getLogger(__name__)
@@ -121,6 +124,7 @@ def get_stats():
     ).count()
 
     pending_erasures = DataErasureRequest.query.filter_by(status='pending').count()
+    pending_resets   = PasswordResetRequest.query.filter_by(status='pending').count()
 
     return jsonify({
         'users': {
@@ -142,6 +146,7 @@ def get_stats():
         },
         'compliance': {
             'pending_erasure_requests': pending_erasures,
+            'pending_password_resets':  pending_resets,
         }
     }), 200
 
@@ -429,7 +434,7 @@ def dissolve_relationship(rel_id):
     reason = data.get('reason', 'Administrative action')
 
     rel.status   = 'ended'
-    rel.relationship_end_date = datetime.utcnow().date()
+    rel.relationship_end_date = today_eat()
 
     for uid in [rel.client_id, rel.therapist_id]:
         db.session.add(Notification(
@@ -720,3 +725,106 @@ def action_erasure_request(request_id):
     )
 
     return jsonify({'message': 'User data anonymized successfully'}), 200
+
+
+# ========================================
+# PASSWORD RESET REQUESTS (ADMIN SIDE)
+# ========================================
+
+@admin_bp.route('/api/password-reset-requests', methods=['GET'])
+@require_admin()
+def get_password_reset_requests():
+    """
+    All password reset requests, defaulting to pending.
+    Query param: status = pending | approved | used | rejected
+    """
+    status = request.args.get('status', 'pending')
+    query  = PasswordResetRequest.query
+    if status:
+        query = query.filter_by(status=status)
+
+    reqs = query.order_by(PasswordResetRequest.requested_at.asc()).all()
+
+    user_ids = list({r.user_id for r in reqs})
+    users    = User.query.filter(User.user_id.in_(user_ids)).all()
+    user_map = {u.user_id: f'{u.first_name} {u.last_name}' for u in users}
+
+    now = datetime.utcnow()
+    return jsonify({
+        'requests': [{
+            'id':           r.id,
+            'user_id':      r.user_id,
+            'user':         user_map.get(r.user_id, 'Unknown'),
+            'email':        r.email,
+            'status':       r.status,
+            'requested_at': r.requested_at.isoformat(),
+            'approved_at':  r.approved_at.isoformat() if r.approved_at else None,
+            'expires_at':   r.expires_at.isoformat() if r.expires_at else None,
+            # Expose the link for approved-but-not-yet-used tokens so admin
+            # can re-copy without re-approving. Never expose used/rejected tokens.
+            'reset_link': (
+                url_for('auth.reset_password_page', token=r.token, _external=True)
+                if r.status == 'approved' and r.token and r.expires_at and r.expires_at > now
+                else None
+            ),
+            'is_expired': bool(
+                r.status == 'approved' and r.expires_at and r.expires_at <= now
+            ),
+        } for r in reqs],
+        'total': len(reqs)
+    }), 200
+
+
+@admin_bp.route('/api/password-reset-requests/<int:request_id>/approve', methods=['POST'])
+@require_admin()
+def approve_password_reset(request_id):
+    """
+    Approve a reset request — generates a secure one-time link valid for 1 hour.
+    Admin manually shares the link with the user (phone / in-person).
+    """
+    reset_req = PasswordResetRequest.query.get_or_404(request_id)
+
+    if reset_req.status != 'pending':
+        return jsonify({'error': f'Request is already {reset_req.status}'}), 409
+
+    token = secrets.token_urlsafe(48)
+
+    reset_req.token       = token
+    reset_req.status      = 'approved'
+    reset_req.approved_at = datetime.utcnow()
+    reset_req.expires_at  = datetime.utcnow() + timedelta(hours=1)
+
+    admin_log(
+        'password_reset_approved',
+        f'Admin approved password reset for user {reset_req.user_id} ({reset_req.email})'
+    )
+    db.session.commit()
+
+    reset_link = url_for('auth.reset_password_page', token=token, _external=True)
+
+    return jsonify({
+        'message':    'Approved. Share this link with the user — it expires in 1 hour.',
+        'reset_link': reset_link,
+        'expires_at': reset_req.expires_at.isoformat(),
+        'user_email': reset_req.email,
+    }), 200
+
+
+@admin_bp.route('/api/password-reset-requests/<int:request_id>/reject', methods=['POST'])
+@require_admin()
+def reject_password_reset(request_id):
+    """Reject a suspicious or duplicate reset request."""
+    reset_req = PasswordResetRequest.query.get_or_404(request_id)
+
+    if reset_req.status != 'pending':
+        return jsonify({'error': f'Request is already {reset_req.status}'}), 409
+
+    reset_req.status = 'rejected'
+
+    admin_log(
+        'password_reset_rejected',
+        f'Admin rejected password reset for user {reset_req.user_id} ({reset_req.email})'
+    )
+    db.session.commit()
+
+    return jsonify({'message': 'Request rejected.'}), 200
