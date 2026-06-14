@@ -557,9 +557,10 @@ def get_my_prompts():
         is_active=True
     ).order_by(TherapeuticPrompt.created_at.desc()).all()
 
-    # Find which prompts the client has already responded to
-    responded_ids = {
-        r.prompt_id for r in PromptResponse.query.filter_by(client_id=user_id).all()
+    # Find which prompts the client has already responded to, and load
+    # the response itself so we can surface any therapist feedback.
+    responses = {
+        r.prompt_id: r for r in PromptResponse.query.filter_by(client_id=user_id).all()
     }
 
     return jsonify({
@@ -572,7 +573,9 @@ def get_my_prompts():
             'instructions':              p.instructions,
             'expected_duration_minutes': p.expected_duration_minutes,
             'created_at':                p.created_at.isoformat(),
-            'already_responded':         p.prompt_id in responded_ids,
+            'already_responded':         p.prompt_id in responses,
+            'response_content':          responses[p.prompt_id].response_content if p.prompt_id in responses else None,
+            'therapist_feedback':        responses[p.prompt_id].therapist_feedback if p.prompt_id in responses else None,
         } for p in prompts]
     }), 200
 

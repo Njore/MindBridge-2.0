@@ -45,20 +45,6 @@ def log_event_page():
     return render_template('crisis/log_event.html')
 
 
-@crisis_bp.route('/technique-detail/<int:technique_id>', methods=['GET'])
-def technique_detail_page(technique_id):
-    """Show a single deescalation technique's detail page - always accessible"""
-    technique = DeescalationTechnique.query.filter_by(
-        technique_id=technique_id,
-        is_active=True
-    ).first()
-
-    if not technique:
-        return render_template('crisis/technique_detail.html', technique=None), 404
-
-    return render_template('crisis/technique_detail.html', technique=technique)
-
-
 # ========================================
 # CRISIS EVENTS
 # ========================================

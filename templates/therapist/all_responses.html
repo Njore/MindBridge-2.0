@@ -312,11 +312,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         <!-- Action -->
         <div style="margin-top:1rem;">
           <button class="btn ${isReviewed ? 'btn-outline' : 'btn-primary'}"
-            onclick="openFeedbackModal(
-              ${r.response_id},
-              '${escapeHtml(r.client_name)}',
-              ${JSON.stringify(r.response_content)}
-            )">
+            onclick="openFeedbackModal(${r.response_id})">
             ${isReviewed ? '✏️ Edit Feedback' : '💬 Add Feedback'}
           </button>
         </div>
@@ -326,12 +322,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // ── Feedback modal ────────────────────────────────────────────────────────
-  window.openFeedbackModal = function(responseId, clientName, previewText) {
-    document.getElementById('active-response-id').value         = responseId;
-    document.getElementById('modal-client-name').textContent    = clientName;
-    document.getElementById('modal-response-preview').textContent = previewText;
-    document.getElementById('feedback-content').value           = '';
-    document.getElementById('feedbackModal').style.display      = 'block';
+  window.openFeedbackModal = function(responseId) {
+    const r = allResponses.find(item => item.response_id === responseId);
+    if (!r) { showAlert('Could not find that response.'); return; }
+
+    document.getElementById('active-response-id').value           = responseId;
+    document.getElementById('modal-client-name').textContent      = r.client_name;
+    document.getElementById('modal-response-preview').textContent = r.response_content;
+    document.getElementById('feedback-content').value             = r.therapist_feedback || '';
+    document.getElementById('feedbackModal').style.display        = 'block';
   };
 
   window.closeFeedbackModal = function() {
@@ -363,12 +362,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       if (resp.ok) {
         showAlert('Feedback sent successfully! 🎉', 'success');
-        // Update card in-place without full reload
-        const card = document.getElementById(`response-card-${responseId}`);
-        if (card) {
-          card.classList.replace('pending', 'reviewed');
-          setTimeout(() => applyFilters(), 800);
-        }
+        // Update local state so re-renders (e.g. from filters) reflect the new feedback
+        const r = allResponses.find(item => item.response_id === Number(responseId));
+        if (r) r.therapist_feedback = feedback;
+        applyFilters();
       } else {
         showAlert(data.error || 'Failed to send feedback.');
       }

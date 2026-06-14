@@ -98,6 +98,22 @@ document.addEventListener('DOMContentLoaded', async () => {
               <p>${escapeHtml(p.prompt_content)}</p>
             </div>
             ${p.instructions ? `<p style="font-size:0.9rem;color:var(--text-muted);"><strong>Instructions:</strong> ${escapeHtml(p.instructions)}</p>` : ''}
+            ${p.already_responded ? `
+              <div style="margin-top:1rem;">
+                <p style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:0.4rem;">Your Response</p>
+                <div style="border-left:3px solid var(--primary-light);padding-left:0.85rem;margin-bottom:1rem;">
+                  <p style="margin:0;white-space:pre-line;color:#555;">${escapeHtml(p.response_content || '')}</p>
+                </div>
+                ${p.therapist_feedback ? `
+                  <p style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:0.4rem;">💬 Feedback from your therapist</p>
+                  <div style="background:#ecfdf5;border:1px solid #6ee7b7;border-radius:8px;padding:1rem;">
+                    <p style="margin:0;line-height:1.65;white-space:pre-line;">${escapeHtml(p.therapist_feedback)}</p>
+                  </div>
+                ` : `
+                  <p style="font-size:0.85rem;color:var(--text-muted);">⏳ Awaiting feedback from your therapist</p>
+                `}
+              </div>
+            ` : ''}
           </div>
         </div>
         <div style="margin-top:1rem;">

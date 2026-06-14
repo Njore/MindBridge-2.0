@@ -2,6 +2,55 @@
 
 {% block title %}Deescalation Techniques - MindBridge{% endblock %}
 
+{% block extra_css %}
+<style>
+  .technique-card { cursor: pointer; transition: box-shadow 0.2s, transform 0.2s; }
+  .technique-card:hover { box-shadow: 0 4px 14px var(--shadow); transform: translateY(-2px); }
+
+  /* Modal */
+  .modal-overlay {
+    display: none;
+    position: fixed; top:0; left:0; right:0; bottom:0;
+    background: rgba(0,0,0,0.45);
+    z-index: 1000;
+    align-items: center; justify-content: center;
+    padding: 1rem;
+  }
+  .modal-overlay.active { display: flex; }
+  .modal-box {
+    background: white;
+    border-radius: 14px;
+    max-width: 640px;
+    width: 100%;
+    max-height: 85vh;
+    overflow-y: auto;
+    padding: 1.75rem;
+    position: relative;
+  }
+  .modal-close {
+    position: absolute; top: 1rem; right: 1.25rem;
+    background: none; border: none; font-size: 1.5rem;
+    cursor: pointer; color: var(--text-muted); line-height: 1;
+  }
+  .modal-close:hover { color: var(--text-dark); }
+  .modal-meta { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1rem; }
+  .modal-section-title { margin-top: 1.25rem; margin-bottom: 0.5rem; }
+  .modal-steps { padding-left: 1.25rem; }
+  .modal-steps li { margin-bottom: 0.6rem; line-height: 1.5; }
+  .best-for-tag {
+    display: inline-block; background: var(--bg-light);
+    padding: 0.2rem 0.65rem; border-radius: 20px;
+    font-size: 0.85rem; margin: 0 0.35rem 0.35rem 0;
+  }
+  .caution-box {
+    border: 2px solid #f59e0b; background: #fef9c3;
+    border-radius: 10px; padding: 0.85rem 1rem;
+    margin-top: 1.25rem; font-size: 0.92rem;
+  }
+  .caution-box strong { color: #92400e; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container">
     <div class="card">
@@ -11,38 +60,177 @@
         </div>
 
         <div class="grid grid-2">
-            <div class="card" style="border-left: 4px solid var(--success);">
+            <div class="card technique-card" style="border-left: 4px solid var(--success);" onclick="openTechniqueModal('grounding')">
                 <h3>🌬️ 5-4-3-2-1 Grounding</h3>
                 <p><strong>Category:</strong> Grounding</p>
                 <p><strong>Duration:</strong> 5-10 minutes</p>
                 <p>Use your senses to connect with the present moment.</p>
-                <a href="/crisis/technique-detail/1" class="btn btn-primary">View Details</a>
+                <button class="btn btn-primary" onclick="event.stopPropagation(); openTechniqueModal('grounding')">View Details</button>
             </div>
 
-            <div class="card" style="border-left: 4px solid var(--primary);">
+            <div class="card technique-card" style="border-left: 4px solid var(--primary);" onclick="openTechniqueModal('box_breathing')">
                 <h3>💨 Box Breathing</h3>
                 <p><strong>Category:</strong> Breathing</p>
                 <p><strong>Duration:</strong> 3-5 minutes</p>
                 <p>Calm your nervous system with controlled breathing.</p>
-                <a href="/crisis/technique-detail/2" class="btn btn-primary">View Details</a>
+                <button class="btn btn-primary" onclick="event.stopPropagation(); openTechniqueModal('box_breathing')">View Details</button>
             </div>
 
-            <div class="card" style="border-left: 4px solid var(--accent);">
+            <div class="card technique-card" style="border-left: 4px solid var(--accent);" onclick="openTechniqueModal('ice_dive')">
                 <h3>🧊 Ice Dive</h3>
                 <p><strong>Category:</strong> Physical</p>
                 <p><strong>Duration:</strong> 2-3 minutes</p>
                 <p>Use cold water to quickly reduce emotional intensity.</p>
-                <a href="/crisis/technique-detail/3" class="btn btn-primary">View Details</a>
+                <button class="btn btn-primary" onclick="event.stopPropagation(); openTechniqueModal('ice_dive')">View Details</button>
             </div>
 
-            <div class="card" style="border-left: 4px solid var(--warning);">
+            <div class="card technique-card" style="border-left: 4px solid var(--warning);" onclick="openTechniqueModal('tipp')">
                 <h3>🎯 TIPP Skills</h3>
                 <p><strong>Category:</strong> Emotional Regulation</p>
                 <p><strong>Duration:</strong> 5-15 minutes</p>
                 <p>Temperature, Intense exercise, Paced breathing, Paired muscle relaxation.</p>
-                <a href="/crisis/technique-detail/4" class="btn btn-primary">View Details</a>
+                <button class="btn btn-primary" onclick="event.stopPropagation(); openTechniqueModal('tipp')">View Details</button>
             </div>
         </div>
     </div>
 </div>
+
+<!-- Technique Detail Modal -->
+<div class="modal-overlay" id="technique-modal" onclick="if (event.target === this) closeTechniqueModal()">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeTechniqueModal()" aria-label="Close">&times;</button>
+    <h2 id="modal-title"></h2>
+    <p class="modal-meta" id="modal-meta"></p>
+    <p id="modal-description"></p>
+
+    <h4 class="modal-section-title">📋 Steps</h4>
+    <ol class="modal-steps" id="modal-steps"></ol>
+
+    <div id="modal-best-for-wrap">
+      <h4 class="modal-section-title">✅ Best for</h4>
+      <div id="modal-best-for"></div>
+    </div>
+
+    <div id="modal-caution-wrap" style="display:none;">
+      <div class="caution-box" id="modal-caution"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const TECHNIQUES = {
+  grounding: {
+    title: '🌬️ 5-4-3-2-1 Grounding',
+    category: 'Grounding',
+    duration: '5-10 minutes',
+    description: 'A sensory grounding exercise that gently shifts attention away from distressing thoughts or memories and back into the present moment, by deliberately noticing what is happening in your immediate surroundings right now. It is especially useful when you feel disconnected from your body, caught in a flashback, or swept up in a wave of anxiety.',
+    steps: [
+      'Pause and take one slow breath. If it feels safe, plant both feet on the floor.',
+      'Look around and silently name 5 things you can see. Take your time — notice colour, shape, or texture rather than just labelling them.',
+      'Notice 4 things you can feel — the chair beneath you, fabric on your skin, the temperature of the air, your feet on the ground.',
+      'Listen for 3 things you can hear, near or far — traffic, your own breathing, a clock, voices.',
+      'Notice 2 things you can smell. If nothing comes to mind, think of two smells you like.',
+      'Notice 1 thing you can taste — even if it is just the inside of your mouth, or take a sip of water or a small mint.',
+      'Take another slow breath and check in: has the intensity of the emotion shifted at all? Repeat the sequence, or any single step, as many times as needed.'
+    ],
+    bestFor: ['Anxiety', 'Panic attacks', 'Dissociation', 'Flashbacks / intrusive memories', 'Racing thoughts'],
+    caution: null
+  },
+
+  box_breathing: {
+    title: '💨 Box Breathing',
+    category: 'Breathing',
+    duration: '3-5 minutes',
+    description: 'A paced-breathing exercise (sometimes called "four-square" breathing) that uses equal counts for inhale, hold, exhale, and hold-empty. Slowing and evening out the breath signals safety to the nervous system and helps bring a racing heart rate back down.',
+    steps: [
+      'Sit upright in a comfortable position, with feet flat on the floor and shoulders relaxed.',
+      'Gently exhale all the air from your lungs through your mouth.',
+      'Inhale slowly through your nose for a count of 4.',
+      'Hold the breath gently for a count of 4 — without straining.',
+      'Exhale slowly through your mouth for a count of 4.',
+      'Hold at the bottom (lungs empty) for a count of 4 before inhaling again.',
+      'Repeat the cycle for 4-6 rounds. If a count of 4 feels too long, shorten every step to a count of 3 — consistency matters more than the exact number.'
+    ],
+    bestFor: ['Acute anxiety', 'Anger / irritability', 'Pre-sleep racing thoughts', 'General stress'],
+    caution: null
+  },
+
+  ice_dive: {
+    title: '🧊 Ice Dive (Cold Water / Temperature)',
+    category: 'Physical',
+    duration: '30 seconds - 2 minutes (plus recovery)',
+    description: 'This is the "Temperature" component of the DBT skill TIPP. Briefly exposing the face to cold water triggers the body\'s mammalian dive reflex, which rapidly slows the heart rate and shifts the nervous system out of high-arousal "fight or flight" mode. It works on the body\'s chemistry directly, which is why it can feel helpful when emotions are too intense for talking or thinking-based skills to reach.',
+    steps: [
+      'Fill a bowl or sink with cold water (around 10-15°C / 50-60°F). Add a few ice cubes if you have them.',
+      'Take a normal breath in, then hold it gently.',
+      'Lower your face into the water so your forehead, cheeks, and the area around (but not directly on) your eyes are submerged for about 15-30 seconds.',
+      'If a bowl of water is not practical, hold a cold pack or a few ice cubes wrapped in a damp cloth firmly against your eyes, cheeks, and temples for 30 seconds to a minute instead — this is gentler and almost as effective.',
+      'Lift your face out, breathe normally, and pause. Notice any change in your heart rate or the intensity of the emotion.',
+      'If you feel calmer but not fully settled, you can repeat once more after a short break. Follow up with a paced-breathing or grounding skill to help the calm settle in.'
+    ],
+    bestFor: ['Overwhelming rage or panic', 'Urges to self-harm', 'Emotional "flooding" when other skills feel out of reach', 'Acute dissociation'],
+    caution: 'This technique briefly slows your heart rate and is not recommended for anyone with a heart condition, irregular heartbeat, a history of fainting, low blood pressure, Raynaud\'s syndrome, or those who are pregnant. If any of these apply to you, please check with your doctor or therapist before trying it, and use the cold-pack version rather than full submersion. Never hold your breath for an extended period, and stop immediately if you feel dizzy, faint, or unwell.'
+  },
+
+  tipp: {
+    title: '🎯 TIPP Skills',
+    category: 'Emotional Regulation',
+    duration: '5-15 minutes total',
+    description: 'TIPP is a set of four DBT (Dialectical Behaviour Therapy) crisis-survival skills designed for moments when emotion feels overwhelming — too intense for breathing or grounding alone. Each letter changes your body chemistry in a way that lowers arousal quickly, buying you time before you act on an urge. You don\'t need to do all four — even one can help.',
+    steps: [
+      'T — Temperature: Change your body temperature quickly, e.g. cold water on your face (see the "Ice Dive" technique), holding a cold pack to your cheeks, or stepping outside into cool air. This triggers the dive reflex and slows your heart rate within seconds.',
+      'I — Intense exercise: Spend 1-3 minutes doing something physically intense — jumping jacks, running up and down stairs, fast walking, or push-ups. This burns off stress hormones like adrenaline and cortisol that are fuelling the emotional surge.',
+      'P — Paced breathing: Slow your breathing so the exhale is longer than the inhale, e.g. inhale for 4 counts, exhale for 6-8 counts. A longer exhale activates the body\'s "rest and digest" response.',
+      'P — Paired muscle relaxation: Working through major muscle groups (hands, arms, shoulders, face, stomach, legs), tense each one firmly for about 5 seconds while inhaling, then release it completely while exhaling and say "relax" silently. Move through the body slowly.',
+      'You can use these in any order, mix and match, or repeat one if it is working. The goal is simply to bring the intensity down enough that you can use slower coping or thinking skills, or reach out for support.'
+    ],
+    bestFor: ['Crisis-level distress', 'Strong urges to self-harm or act impulsively', 'Panic attacks', 'Rage'],
+    caution: 'The temperature and intense-exercise components have the same precautions as the "Ice Dive" technique and vigorous exercise generally — check with your doctor first if you have a heart condition, are pregnant, or have any injury that limits exercise. If one component doesn\'t feel safe for you, the other three are still effective on their own.'
+  }
+};
+
+const modal = document.getElementById('technique-modal');
+
+function openTechniqueModal(key) {
+  const t = TECHNIQUES[key];
+  if (!t) return;
+
+  document.getElementById('modal-title').textContent = t.title;
+  document.getElementById('modal-meta').innerHTML =
+    `<strong>Category:</strong> ${t.category} &middot; <strong>Duration:</strong> ${t.duration}`;
+  document.getElementById('modal-description').textContent = t.description;
+
+  document.getElementById('modal-steps').innerHTML =
+    t.steps.map(s => `<li>${s}</li>`).join('');
+
+  const bestForWrap = document.getElementById('modal-best-for-wrap');
+  if (t.bestFor && t.bestFor.length) {
+    document.getElementById('modal-best-for').innerHTML =
+      t.bestFor.map(tag => `<span class="best-for-tag">${tag}</span>`).join('');
+    bestForWrap.style.display = '';
+  } else {
+    bestForWrap.style.display = 'none';
+  }
+
+  const cautionWrap = document.getElementById('modal-caution-wrap');
+  if (t.caution) {
+    document.getElementById('modal-caution').innerHTML = `<strong>⚠️ Before you try this:</strong> ${t.caution}`;
+    cautionWrap.style.display = '';
+  } else {
+    cautionWrap.style.display = 'none';
+  }
+
+  modal.classList.add('active');
+}
+
+function closeTechniqueModal() {
+  modal.classList.remove('active');
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeTechniqueModal();
+});
+</script>
 {% endblock %}
