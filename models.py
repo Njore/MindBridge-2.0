@@ -348,7 +348,6 @@ class Notification(db.Model):
     read_at = db.Column(db.DateTime)
     is_dismissed = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
     __table_args__ = (
         db.Index('idx_user_unread', 'user_id', 'is_read'),
         db.Index('idx_created', 'created_at'),

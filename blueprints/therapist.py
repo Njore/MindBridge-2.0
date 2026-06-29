@@ -94,7 +94,7 @@ def get_clients():
         unread_count = Capsule.query.filter_by(
             client_id=client.user_id,
             therapist_id=therapist_id,
-            priority_reviewed_by_therapist=False
+            priority_reviewed_by_therapist= False
         ).filter(
             Capsule.priority_level.in_(['CRITICAL', 'HIGH'])
         ).count()
@@ -105,7 +105,7 @@ def get_clients():
             'first_name': client.first_name,
             'last_name': client.last_name,
             'email': client.email,
-            'relationship_start': rel.relationship_start_date.isoformat(),
+            'relationship_start_date': rel.relationship_start_date.isoformat(),
             'client_goals': rel.client_goals,
             'unread_priority_count': unread_count
         })

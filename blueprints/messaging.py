@@ -4,7 +4,6 @@ from models import (db, Capsule, Message, MessageTag, MessageAttachment,
 from datetime import datetime, timedelta
 from services.sentiment_analyzer import analyzer
 from services.encryption import encrypt_content, decrypt_content
-from services.timezone import today_eat
 from threading import Thread
 import logging
 
@@ -29,11 +28,29 @@ def require_auth():
     return decorator
 
 
+PRIORITY_RANK = {'LOW': 0, 'MEDIUM': 1, 'HIGH': 2, 'CRITICAL': 3}
+
+
+def _should_escalate(current_level: str, new_level: str) -> bool:
+    """
+    Return True only when the new analysis is strictly higher than what we
+    already have stored.  Priority never goes down — once CRITICAL, always
+    CRITICAL for this capsule unless a therapist manually resets it.
+    """
+    return PRIORITY_RANK.get(new_level, 0) > PRIORITY_RANK.get(current_level or 'LOW', 0)
+
+
 def analyze_capsule_priority(capsule_id, app=None):
     """
     Background task to analyze capsule priority using Granite AI.
     Runs asynchronously so it doesn't block the response.
-    app must be passed in explicitly to avoid context loss in daemon threads.
+
+    Key behaviours:
+    - Analyses ALL messages in the capsule so each new message adds context.
+    - Priority can only escalate (CRITICAL > HIGH > MEDIUM > LOW).
+      A later LOW result will never override a previously stored HIGH/CRITICAL.
+    - The capsule starts with priority_analyzed_at=None (shown as "Analyzing…"
+      in the UI) and is only cleared once the first real result arrives.
     """
     from app import create_app
     if app is None:
@@ -46,7 +63,7 @@ def analyze_capsule_priority(capsule_id, app=None):
                 logger.error(f"Capsule {capsule_id} not found for analysis")
                 return
 
-            # Get all messages in capsule (client messages only for sentiment)
+            # Always re-fetch all client messages so every analysis has full context
             messages = Message.query.filter_by(capsule_id=capsule_id) \
                 .order_by(Message.created_at) \
                 .all()
@@ -55,57 +72,81 @@ def analyze_capsule_priority(capsule_id, app=None):
                 logger.info(f"No messages in capsule {capsule_id}, skipping analysis")
                 return
 
-            # Extract message content (only client messages matter for priority)
-            # But include all for context
-            # Content is stored encrypted at rest — decrypt before analysis
             message_texts = [decrypt_content(m.content) for m in messages]
-
             logger.info(f"Analyzing capsule {capsule_id} with {len(message_texts)} messages")
 
             # Analyze using Granite AI
             analysis = analyzer.analyze_capsule_messages(message_texts)
+            new_level = analysis['priority_level']
 
-            # Update capsule with analysis results
-            capsule.priority_level = analysis['priority_level']
-            capsule.priority_score = analysis['priority_score']
+            # ── Escalation-only logic ────────────────────────────────────────
+            # Preserve the highest priority ever seen; never downgrade.
+            current_level = capsule.priority_level or 'LOW'
+            if _should_escalate(current_level, new_level):
+                capsule.priority_level = new_level
+                capsule.priority_score = analysis['priority_score']
+                capsule.priority_reasons = {
+                    'reasons': analysis['reasons'],
+                    'risk_flags': analysis['risk_flags'],
+                    'sentiment_summary': analysis['sentiment_summary']
+                }
+                logger.info(
+                    f"Capsule {capsule_id} escalated: {current_level} → {new_level} "
+                    f"(score={analysis['priority_score']})"
+                )
+            else:
+                # No escalation — but still update the score/reasons so the
+                # therapist always sees the most recent rationale.
+                if new_level == current_level:
+                    capsule.priority_score = max(
+                        float(capsule.priority_score or 0),
+                        float(analysis['priority_score'])
+                    )
+                    capsule.priority_reasons = {
+                        'reasons': analysis['reasons'],
+                        'risk_flags': analysis['risk_flags'],
+                        'sentiment_summary': analysis['sentiment_summary']
+                    }
+                logger.info(
+                    f"Capsule {capsule_id}: new result {new_level} did not escalate "
+                    f"stored {current_level} — keeping existing priority"
+                )
+
+            # Mark analysis as completed (clears the "Analyzing…" state in UI)
             capsule.priority_analyzed_at = datetime.utcnow()
-            capsule.priority_reasons = {
-                'reasons': analysis['reasons'],
-                'risk_flags': analysis['risk_flags'],
-                'sentiment_summary': analysis['sentiment_summary']
-            }
-
             db.session.commit()
 
-            logger.info(
-                f"Capsule {capsule_id} analyzed: priority={analysis['priority_level']}, score={analysis['priority_score']}")
+            # ── Notifications (only fire when we actually escalate) ───────────
+            if _should_escalate(current_level, new_level) or (
+                new_level == 'CRITICAL' and current_level == 'CRITICAL'
+            ):
+                if new_level == 'CRITICAL':
+                    notification = Notification(
+                        user_id=capsule.therapist_id,
+                        notification_type='crisis_alert',
+                        title='⚠️ CRITICAL: Client in distress',
+                        message=(
+                            f'URGENT: Client shows signs of crisis in capsule '
+                            f'"{capsule.title}". Priority score: {analysis["priority_score"]:.2f}'
+                        ),
+                        related_entity_type='capsule',
+                        related_entity_id=capsule_id
+                    )
+                    db.session.add(notification)
+                    db.session.commit()
+                    logger.warning(f"CRITICAL alert created for capsule {capsule_id}")
 
-            # If CRITICAL, create immediate high-priority notification for therapist
-            if analysis['priority_level'] == 'CRITICAL':
-                notification = Notification(
-                    user_id=capsule.therapist_id,
-                    notification_type='crisis_alert',
-                    title='⚠️ CRITICAL: Client in distress',
-                    message=f'URGENT: Client shows signs of crisis in capsule "{capsule.title}". Priority score: {analysis["priority_score"]}',
-                    related_entity_type='capsule',
-                    related_entity_id=capsule_id
-                )
-                db.session.add(notification)
-                db.session.commit()
-                logger.warning(f"CRITICAL alert created for capsule {capsule_id}")
-
-            # If HIGH priority, create standard notification
-            elif analysis['priority_level'] == 'HIGH':
-                notification = Notification(
-                    user_id=capsule.therapist_id,
-                    notification_type='high_priority',
-                    title='⚠️ High Priority Capsule',
-                    message=f'High priority capsule requires attention: {capsule.title}',
-                    related_entity_type='capsule',
-                    related_entity_id=capsule_id
-                )
-                db.session.add(notification)
-                db.session.commit()
+                elif new_level == 'HIGH':
+                    notification = Notification(
+                        user_id=capsule.therapist_id,
+                        notification_type='high_priority',
+                        title='⚠️ High Priority Capsule',
+                        message=f'High priority capsule requires attention: {capsule.title}',
+                        related_entity_type='capsule',
+                        related_entity_id=capsule_id
+                    )
+                    db.session.add(notification)
+                    db.session.commit()
 
     except Exception as e:
         logger.error(f"Error analyzing capsule {capsule_id}: {str(e)}", exc_info=True)
@@ -165,7 +206,7 @@ def create_capsule():
             client_id=user_id,
             therapist_id=data['therapist_id'],
             relationship_id=relationship.relationship_id,
-            title=data.get('title', f"Capsule - {today_eat().isoformat()}"),
+            title=data.get('title', f"Capsule - {datetime.utcnow().strftime('%Y-%m-%d')}"),
             user_tag=data.get('user_tag', 'general'),
             status='open',
             priority_level='LOW',  # Default priority
@@ -183,6 +224,9 @@ def create_capsule():
                 content=encrypt_content(first_message)
             )
             db.session.add(message)
+
+            # Mark as "Analyzing…" — cleared once the background thread finishes
+            capsule.priority_analyzed_at = None
             db.session.commit()
 
             # Trigger analysis for the new capsule
@@ -210,11 +254,13 @@ def get_capsules():
     user_id = session['user_id']
     user_type = session['user_type']
 
-    status = request.args.get('status')         # open | sealed | archived
-    read_filter = request.args.get('read')      # 'read' | 'unread' (therapist tabs)
-    client_filter = request.args.get('client_id', type=int)   # filter by client
-    priority_filter = request.args.get('priority')            # CRITICAL|HIGH|MEDIUM|LOW
+    status = request.args.get('status')
     sort_by_priority = request.args.get('sort_by_priority', 'false').lower() == 'true'
+
+    # Therapist-only filters
+    read_filter = request.args.get('read')        # 'read' | 'unread'
+    client_id_filter = request.args.get('client_id', type=int)
+    priority_filter = request.args.get('priority') # CRITICAL|HIGH|MEDIUM|LOW
 
     if user_type == 'client':
         query = Capsule.query.filter_by(client_id=user_id)
@@ -225,20 +271,19 @@ def get_capsules():
     if status:
         query = query.filter_by(status=status)
 
-    # Therapist-only filters
-    if user_type == 'therapist':
-        if client_filter:
-            query = query.filter_by(client_id=client_filter)
-        if priority_filter:
-            query = query.filter_by(priority_level=priority_filter.upper())
-        if read_filter == 'read':
-            query = query.filter_by(therapist_read=True)
-        elif read_filter == 'unread':
+    # Apply therapist-specific filters
+        if read_filter == 'unread':
             query = query.filter_by(therapist_read=False)
+        elif read_filter == 'read':
+            query = query.filter_by(therapist_read=True)
+        if client_id_filter:
+            query = query.filter_by(client_id=client_id_filter)
+        if priority_filter:
+            query = query.filter_by(priority_level=priority_filter)
 
-    capsules = query.order_by(Capsule.created_at.desc()).limit(100).all()
+    capsules = query.order_by(Capsule.created_at.desc()).limit(50).all()
 
-    # For therapists, sort by priority
+    # For therapists, sort by priority (CRITICAL → HIGH → MEDIUM → LOW)
     if user_type == 'therapist' and sort_by_priority:
         priority_order = {'CRITICAL': 0, 'HIGH': 1, 'MEDIUM': 2, 'LOW': 3}
         capsules.sort(key=lambda c: priority_order.get(c.priority_level or 'LOW', 3))
@@ -248,36 +293,23 @@ def get_capsules():
     client_map = {}
     if client_ids:
         clients = User.query.filter(User.user_id.in_(client_ids)).all()
-        client_map = {u.user_id: (f"{u.first_name} {u.last_name}", u.user_id) for u in clients}
-
-    # Determine is_read per capsule per viewer
-    def capsule_is_read(c):
-        if user_type == 'therapist':
-            return bool(getattr(c, 'therapist_read', False))
-        else:
-            return bool(getattr(c, 'client_read', False))
+        client_map = {u.user_id: f"{u.first_name} {u.last_name}" for u in clients}
 
     return jsonify({
         'capsules': [{
             'capsule_id': c.capsule_id,
             'client_id': c.client_id,
-            'client_name': client_map.get(c.client_id, ('Unknown Client', c.client_id))[0] if client_map.get(c.client_id) else 'Unknown Client',
+            'client_name': client_map.get(c.client_id, 'Unknown Client'),
             'therapist_id': c.therapist_id,
             'title': c.title,
             'user_tag': c.user_tag,
             'status': c.status,
+            'is_read': getattr(c, 'is_read', True),   # False = therapist hasn't opened it yet
             'priority_level': c.priority_level or 'LOW',
             'priority_score': float(c.priority_score) if c.priority_score else 0,
-            'priority_reasons': c.priority_reasons,
-            'is_read': capsule_is_read(c),
             'created_at': c.created_at.isoformat(),
             'sealed_at': c.sealed_at.isoformat() if c.sealed_at else None
-        } for c in capsules],
-        # Return distinct clients for therapist filter dropdown
-        'clients': [
-            {'user_id': uid, 'name': name}
-            for uid, (name, _) in (client_map.items() if user_type == 'therapist' else {}.items())
-        ] if user_type == 'therapist' else []
+        } for c in capsules]
     }), 200
 
 
@@ -346,6 +378,8 @@ def seal_capsule(capsule_id):
     db.session.commit()
 
     # Perform final priority analysis when sealing
+    capsule.priority_analyzed_at = None
+    db.session.commit()
     thread = Thread(target=analyze_capsule_priority, args=(capsule_id, current_app._get_current_object()))
     thread.daemon = True
     thread.start()
@@ -424,16 +458,6 @@ def create_message(capsule_id):
         db.session.add(message)
         db.session.commit()
 
-        # Mark capsule as unread for the recipient when a new message arrives
-        if user_id == capsule.client_id:
-            # Client sent → therapist hasn't read it
-            capsule.therapist_read = False
-        else:
-            # Therapist sent → client hasn't read it; also mark therapist as having read it
-            capsule.client_read = False
-            capsule.therapist_read = True
-        db.session.commit()
-
         # Notify the other party
         recipient_id = capsule.therapist_id if user_id == capsule.client_id else capsule.client_id
         notification = Notification(
@@ -449,6 +473,9 @@ def create_message(capsule_id):
 
         # Trigger priority analysis in background (only for client messages)
         if user_id == capsule.client_id:  # Only analyze when client sends message
+            # Mark as "Analyzing…" so UI shows pending state immediately
+            capsule.priority_analyzed_at = None
+            db.session.commit()
             thread = Thread(target=analyze_capsule_priority, args=(capsule_id, current_app._get_current_object()))
             thread.daemon = True
             thread.start()
@@ -572,7 +599,6 @@ def get_prioritized_capsules():
             .order_by(Message.created_at.asc())
             .first()
         )
-        first_message_content = decrypt_content(first_message.content) if first_message else ''
 
         result.append({
             'capsule_id': capsule.capsule_id,
@@ -583,8 +609,8 @@ def get_prioritized_capsules():
             'priority_reasons': capsule.priority_reasons,
             'priority_analyzed_at': capsule.priority_analyzed_at.isoformat() if capsule.priority_analyzed_at else None,
             'message_count': message_count,
-            'first_message_preview': first_message_content[:100] + '...' if len(
-                first_message_content) > 100 else first_message_content,
+            'first_message_preview': first_message.content[:100] + '...' if first_message and len(
+                first_message.content) > 100 else (first_message.content if first_message else ''),
             'last_message_at': last_message.created_at.isoformat() if last_message else None,
             'status': capsule.status,
             'sealed_at': capsule.sealed_at.isoformat() if capsule.sealed_at else None
@@ -620,15 +646,24 @@ def reanalyze_capsule(capsule_id):
         message_texts = [decrypt_content(m.content) for m in messages]
         analysis = analyzer.analyze_capsule_messages(message_texts)
 
-        # Overwrite whatever was stored before
-        capsule.priority_level       = analysis['priority_level']
-        capsule.priority_score       = analysis['priority_score']
+        # Escalation-only: only overwrite if the new result is strictly higher
+        current_level = capsule.priority_level or 'LOW'
+        if _should_escalate(current_level, analysis['priority_level']) or current_level == analysis['priority_level']:
+            capsule.priority_level       = analysis['priority_level']
+            capsule.priority_score       = analysis['priority_score']
+            capsule.priority_reasons     = {
+                'reasons':          analysis['reasons'],
+                'risk_flags':       analysis['risk_flags'],
+                'sentiment_summary': analysis['sentiment_summary']
+            }
+        else:
+            # New result is lower than stored — keep stored priority, update reasons only
+            capsule.priority_reasons = {
+                'reasons':           analysis['reasons'],
+                'risk_flags':        analysis['risk_flags'],
+                'sentiment_summary': analysis['sentiment_summary']
+            }
         capsule.priority_analyzed_at = datetime.utcnow()
-        capsule.priority_reasons     = {
-            'reasons':          analysis['reasons'],
-            'risk_flags':       analysis['risk_flags'],
-            'sentiment_summary': analysis['sentiment_summary']
-        }
         db.session.commit()
 
         # Re-issue notifications if the new result is critical
@@ -674,48 +709,6 @@ def reanalyze_capsule(capsule_id):
     except Exception as e:
         logger.error(f"Reanalysis failed for capsule {capsule_id}: {str(e)}", exc_info=True)
         return jsonify({'error': 'Analysis failed. Is Ollama running?'}), 500
-
-@messaging_bp.route('/capsules/<int:capsule_id>/mark-read', methods=['POST'])
-@require_auth()
-def mark_capsule_read(capsule_id):
-    """Mark a capsule as read for the current user (client or therapist)"""
-    user_id = session['user_id']
-    user_type = session['user_type']
-
-    capsule = Capsule.query.get(capsule_id)
-    if not capsule:
-        return jsonify({'error': 'Capsule not found'}), 404
-
-    if capsule.client_id != user_id and capsule.therapist_id != user_id:
-        return jsonify({'error': 'Access denied'}), 403
-
-    if user_type == 'therapist':
-        capsule.therapist_read = True
-    else:
-        capsule.client_read = True
-
-    db.session.commit()
-    return jsonify({'message': 'Marked as read'}), 200
-
-
-@messaging_bp.route('/api/therapist/clients', methods=['GET'])
-@require_auth()
-def get_therapist_clients():
-    """Return distinct clients for the therapist's filter dropdown"""
-    user_id = session['user_id']
-    if session.get('user_type') != 'therapist':
-        return jsonify({'error': 'Access denied'}), 403
-
-    relationships = ClientTherapistRelationship.query.filter_by(
-        therapist_id=user_id, status='active'
-    ).all()
-    client_ids = [r.client_id for r in relationships]
-    clients = User.query.filter(User.user_id.in_(client_ids)).all()
-
-    return jsonify({
-        'clients': [{'user_id': u.user_id, 'name': f"{u.first_name} {u.last_name}"} for u in clients]
-    }), 200
-
 
 @messaging_bp.route('/api/therapist/capsules/<int:capsule_id>/mark-reviewed', methods=['POST'])
 @require_auth()

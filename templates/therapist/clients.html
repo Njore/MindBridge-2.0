@@ -83,6 +83,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function renderClients(clients) {
+      console.log('clients data:', JSON.stringify(clients, null, 2));
     const list = document.getElementById('clients-list');
     list.style.display = 'block';
 
@@ -170,8 +171,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function formatDate(dateStr) {
-    return new Date(dateStr).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' });
-  }
+    if (!dateStr) return 'Unknown';
+    const [year, month, day] = dateStr.split('-').map(Number);
+    return new Date(year, month - 1, day).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
 
   // Kick off
   loadClients();

@@ -205,6 +205,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (currentTab === 'users' && usersDrilldown && currentClientId) {
           params.set('client_id', currentClientId);
+          // Always sort by priority when viewing a single user's capsules
+          params.set('sort_by_priority', 'true');
         }
 
         if (currentTab === 'status' && currentPriority) {
@@ -227,7 +229,9 @@ document.addEventListener('DOMContentLoaded', () => {
       if (capsules.length === 0) {
         const backButton = (userType === 'therapist' && currentTab === 'users' && usersDrilldown)
           ? `<button class="back-link" onclick="backToUsers()">← Back to Users</button>
-             <h3 style="margin-bottom:1rem;">👤 ${escapeHtml(currentClientName)}</h3>`
+             <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.25rem;">
+               <h3 style="margin:0;">👤 ${escapeHtml(currentClientName)}</h3>
+             </div>`
           : '';
         container.innerHTML = backButton + `
           <div style="text-align:center;padding:3rem;color:var(--text-muted);">
@@ -317,8 +321,22 @@ document.addEventListener('DOMContentLoaded', () => {
     let html = '';
 
     if (currentTab === 'users' && usersDrilldown) {
-      html += `<button class="back-link" onclick="backToUsers()">← Back to Users</button>
-               <h3 style="margin-bottom:1rem;">👤 ${escapeHtml(currentClientName)}</h3>`;
+      // Summary counts for this user
+      const unreadCount   = capsules.filter(c => !c.is_read).length;
+      const criticalCount = capsules.filter(c => c.priority_level === 'CRITICAL').length;
+      const summaryPills  = [
+        unreadCount   > 0 ? `<span class="unread-pill">${unreadCount} unread</span>` : '',
+        criticalCount > 0 ? `<span class="critical-pill">🚨 ${criticalCount} critical</span>` : ''
+      ].filter(Boolean).join('');
+
+      html += `
+        <button class="back-link" onclick="backToUsers()">← Back to Users</button>
+        <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;margin-bottom:1.25rem;">
+          <h3 style="margin:0;">👤 ${escapeHtml(currentClientName)}</h3>
+          <span style="color:var(--text-muted);font-size:0.85rem;">${capsules.length} capsule${capsules.length !== 1 ? 's' : ''}</span>
+          ${summaryPills}
+        </div>
+        <p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:1rem;">Sorted by priority: Critical → High → Medium → Low</p>`;
     }
 
     html += capsules.map(capsuleItemHtml).join('');
@@ -337,16 +355,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Group by client
       const groups = {};
-      const order = [];
       capsules.forEach(c => {
         if (!groups[c.client_id]) {
-          groups[c.client_id] = { name: c.client_name, total: 0, unread: 0, critical: 0 };
-          order.push(c.client_id);
+          groups[c.client_id] = { name: c.client_name, total: 0, unread: 0, critical: 0, high: 0 };
         }
         const g = groups[c.client_id];
         g.total++;
         if (!c.is_read) g.unread++;
         if (c.priority_level === 'CRITICAL') g.critical++;
+        if (c.priority_level === 'HIGH') g.high++;
+      });
+
+      // Sort users: most urgent first (by critical desc, then unread desc, then high desc)
+      const order = Object.keys(groups).sort((a, b) => {
+        const ga = groups[a], gb = groups[b];
+        if (gb.critical !== ga.critical) return gb.critical - ga.critical;
+        if (gb.unread  !== ga.unread)  return gb.unread  - ga.unread;
+        return gb.high - ga.high;
       });
 
       if (order.length === 0) {

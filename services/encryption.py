@@ -43,18 +43,28 @@ def decrypt_content(encrypted_content: str) -> str:
     """
     Decrypt a ciphertext string read from storage.
 
-    Returns a placeholder string instead of raising if the value can't be
-    decrypted (e.g. wrong key, or legacy plaintext rows that predate
-    encryption being enabled) — this prevents one bad row from 500'ing
-    an entire conversation/list view.
+    Handles two cases gracefully:
+    1. Legacy plaintext rows written before encryption was enabled —
+       detected by the absence of the Fernet 'gAAAAA' prefix and
+       returned as-is so old data stays readable.
+    2. Genuinely corrupt / wrong-key tokens — logged and returned as
+       the original value so the UI still shows something useful rather
+       than a placeholder.
     """
     if encrypted_content is None:
         return None
+
+    # Fernet tokens always start with 'gAAAAA' (base64-encoded version byte).
+    # If the stored value doesn't have this prefix it was written as plaintext
+    # (before encryption was wired in) — just return it directly.
+    if not encrypted_content.startswith('gAAAAA'):
+        return encrypted_content
+
     try:
         return cipher_suite.decrypt(encrypted_content.encode('utf-8')).decode('utf-8')
     except InvalidToken:
         logger.error("Failed to decrypt content — invalid token or wrong key")
-        return '[Unable to decrypt message]'
+        return encrypted_content   # return raw value rather than a useless placeholder
     except Exception as e:
         logger.error(f"Failed to decrypt content: {e}")
-        return '[Unable to decrypt message]'
+        return encrypted_content

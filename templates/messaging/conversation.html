@@ -69,9 +69,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
 
-  function formatTime(str) {
-    return new Date(str).toLocaleString('en-GB', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
-  }
+function formatTime(str) {
+    // Ensure the string is treated as UTC (append Z if no timezone info)
+    const utcStr = str.endsWith('Z') || str.includes('+') ? str : str + 'Z';
+    return new Date(utcStr).toLocaleString('en-GB', {
+        day: 'numeric', month: 'short',
+        hour: '2-digit', minute: '2-digit',
+        timeZone: 'Africa/Nairobi'
+    });
+}
 
   // ── Mark capsule as read on open ─────────────────────────────────────────
   async function markRead() {
@@ -97,21 +103,31 @@ document.addEventListener('DOMContentLoaded', async () => {
         `<span style="display:inline-block;padding:0.2rem 0.75rem;border-radius:20px;font-size:0.85rem;font-weight:600;background:${c.status === 'open' ? 'rgba(123,165,145,0.2)' : 'rgba(139,123,139,0.2)'};color:${c.status === 'open' ? 'var(--success)' : 'var(--primary)'};">${c.status.toUpperCase()}</span>`;
 
 // ── Priority banner (therapist only) ─────────────────────────────────
-if (userType === 'therapist' && c.priority_level) {
+if (userType === 'therapist') {
   const priorityColors = {
     CRITICAL: { bg: '#fee2e2', border: '#dc2626', color: '#dc2626' },
     HIGH:     { bg: '#fed7aa', border: '#f59e0b', color: '#92400e' },
     MEDIUM:   { bg: '#fef9c3', border: '#eab308', color: '#713f12' },
-    LOW:      { bg: 'rgba(123,165,145,0.1)', border: 'var(--success)', color: 'var(--success)' }
+    LOW:      { bg: 'rgba(123,165,145,0.1)', border: 'var(--success)', color: 'var(--success)' },
+    ANALYZING:{ bg: '#eff6ff', border: '#3b82f6', color: '#1d4ed8' }
   };
-  const pc = priorityColors[c.priority_level] || priorityColors.LOW;
-  const reasons = c.priority_reasons?.reasons?.slice(0, 2).join(' · ') || '';
-  const analyzedAt = c.priority_analyzed_at
-    ? `Last analyzed ${formatTime(c.priority_analyzed_at)}`
-    : 'Not yet analyzed';
 
-  alertArea.innerHTML = `
-    <div id="priority-banner" style="padding:0.85rem 1.25rem;border-radius:10px;border:2px solid ${pc.border};background:${pc.bg};color:${pc.color};margin-bottom:1rem;">
+  const isAnalyzing = !c.priority_analyzed_at;
+  const displayLevel = isAnalyzing ? 'ANALYZING' : (c.priority_level || 'LOW');
+  const pc = priorityColors[displayLevel] || priorityColors.LOW;
+
+  let bannerContent;
+  if (isAnalyzing) {
+    bannerContent = `
+      <div style="display:flex;align-items:center;gap:0.75rem;">
+        <span style="display:inline-block;width:14px;height:14px;border:2px solid #3b82f6;border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite;"></span>
+        <strong>Analyzing messages…</strong>
+        <span style="font-size:0.82rem;opacity:0.7;">Granite AI is reviewing the capsule — this usually takes under a minute.</span>
+      </div>`;
+  } else {
+    const reasons = c.priority_reasons?.reasons?.slice(0, 2).join(' · ') || '';
+    const analyzedAt = `Last analyzed ${formatTime(c.priority_analyzed_at)}`;
+    bannerContent = `
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap;">
         <div>
           <strong>Priority: ${c.priority_level}</strong>
@@ -127,39 +143,38 @@ if (userType === 'therapist' && c.priority_level) {
             ⟳ Reanalyze
           </button>
         </div>
-      </div>
+      </div>`;
+  }
+
+  alertArea.innerHTML = `
+    <style>
+      @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+    <div id="priority-banner" style="padding:0.85rem 1.25rem;border-radius:10px;border:2px solid ${pc.border};background:${pc.bg};color:${pc.color};margin-bottom:1rem;">
+      ${bannerContent}
     </div>`;
-}
 
-    // ── Reanalyze capsule ─────────────────────────────────────────────────
-    window.reanalyzeCapsule = async function() {
-      const btn = document.getElementById('reanalyze-btn');
-      if (!btn) return;
-
-      btn.disabled = true;
-      btn.textContent = 'Analyzing...';
-
+  // If still analyzing, poll every 4 seconds until priority_analyzed_at is set
+  if (isAnalyzing) {
+    if (window._analysisPollTimer) clearInterval(window._analysisPollTimer);
+    window._analysisPollTimer = setInterval(async () => {
       try {
-        const resp = await fetch(`/messaging/api/therapist/capsules/${capsuleId}/reanalyze`, {
-          method: 'POST'
-        });
-        const data = await resp.json();
-
-        if (resp.ok) {
-          // Reload the full capsule so the banner re-renders with fresh data
-          showAlert('✓ Analysis updated — priority is now ' + data.analysis.priority_level, 'success');
-          setTimeout(() => loadCapsule(), 800);
-        } else {
-          showAlert(data.error || 'Reanalysis failed.');
-          btn.disabled = false;
-          btn.textContent = '⟳ Reanalyze';
+        const r = await fetch(`/messaging/capsules/${capsuleId}`);
+        const d = await r.json();
+        if (r.ok && d.capsule.priority_analyzed_at) {
+          clearInterval(window._analysisPollTimer);
+          window._analysisPollTimer = null;
+          loadCapsule();
         }
-      } catch (e) {
-        showAlert('Network error during reanalysis.');
-        btn.disabled = false;
-        btn.textContent = '⟳ Reanalyze';
-      }
-    };
+      } catch {}
+    }, 4000);
+  } else {
+    if (window._analysisPollTimer) {
+      clearInterval(window._analysisPollTimer);
+      window._analysisPollTimer = null;
+    }
+  }
+}   // end if (userType === 'therapist')
 
       // ── Mark as read on opening ───────────────────────────────────────────
       markRead();
@@ -213,6 +228,35 @@ if (userType === 'therapist' && c.priority_level) {
 
     area.scrollTop = area.scrollHeight;
   }
+
+  // ── Reanalyze capsule (called from priority banner button) ───────────────
+  window.reanalyzeCapsule = async function() {
+    const btn = document.getElementById('reanalyze-btn');
+    if (!btn) return;
+
+    btn.disabled = true;
+    btn.textContent = 'Analyzing...';
+
+    try {
+      const resp = await fetch(`/messaging/api/therapist/capsules/${capsuleId}/reanalyze`, {
+        method: 'POST'
+      });
+      const data = await resp.json();
+
+      if (resp.ok) {
+        showAlert('✓ Analysis updated — priority is now ' + data.analysis.priority_level, 'success');
+        setTimeout(() => loadCapsule(), 800);
+      } else {
+        showAlert(data.error || 'Reanalysis failed.');
+        btn.disabled = false;
+        btn.textContent = '⟳ Reanalyze';
+      }
+    } catch (e) {
+      showAlert('Network error during reanalysis.');
+      btn.disabled = false;
+      btn.textContent = '⟳ Reanalyze';
+    }
+  };
 
   // ── Send message ──────────────────────────────────────────────────────────
   document.getElementById('send-btn').addEventListener('click', async () => {
