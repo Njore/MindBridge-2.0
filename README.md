@@ -28,74 +28,85 @@ A secure HIPAA-compliant messaging platform that bridges the gap between schedul
 
 ## Project Structure
 
-```
-mindbridge/
+```text
+MindBridge-2.0/
 │
-├── app.py                      # Main application entry point
-├── models.py                   # SQLAlchemy database models
-├── requirements.txt            # Python dependencies
-├── README.md                   # This file
+├── app.py                         # Main application entry point
+├── models.py                      # SQLAlchemy database models
+├── setup.py                       # Database initialization/setup
+├── seed.py                        # Seed core application data
+├── seed_extras.py                 # Seed additional sample data
+├── requirements.txt               # Python dependencies
+├── README.md                      # Project documentation
+├── .env                           # Environment variables (not committed)
+├── .gitignore                     # Git ignore rules
 │
-├── blueprints/                 # Flask blueprints
+├── blueprints/                    # Flask Blueprints
 │   ├── __init__.py
-│   ├── auth.py                 # Authentication routes
-│   ├── client.py               # Client functionality
-│   ├── therapist.py            # Therapist functionality
-│   ├── messaging.py            # Secure messaging
-│   └── crisis.py               # Crisis management
-│ 
-├── templates/                  # Jinja2 templates
-│   ├── base.html               # Base template
-│   ├── index.html              # Landing page
-│   │
-│   ├── auth/                   # Authentication templates
-│   │   ├── login.html
-│   │   ├── register.html
-│   │   └── profile.html
-│   │
-│   ├── client/                 # Client templates
-│   │   ├── dashboard.html
-│   │   ├── breakthroughs.html
-│   │   ├── add_breakthrough.html
-│   │   ├── triggers.html
-│   │   ├── add_trigger.html
-│   │   ├── journal.html
-│   │   ├── add_journal_entry.html
-│   │   ├── prompts.html
-│   │   └── respond_to_prompt.html
-│   │
-│   ├── therapist/              # Therapist templates
-│   │   ├── dashboard.html
-│   │   ├── clients.html
-│   │   ├── client_detail.html
-│   │   ├── create_prompt.html
-│   │   ├── view_trigger.html
-│   │   └── view_prompt_responses.html
-│   │
-│   ├── messaging/              # Messaging templates
-│   │   ├── inbox.html
-│   │   └── conversation.html
-│   │
-│   ├── crisis/                 # Crisis management templates
-│   │   ├── index.html
-│   │   ├── resources.html
-│   │   ├── techniques.html
-│   │   ├── technique_detail.html
-│   │   ├── log_event.html
-│   │   ├── my_events.html
-│   │   └── event_detail.html
-│   │
-│   └── errors/                 # Error pages
-│       ├── 403.html
-│       ├── 404.html
-│       └── 500.html
+│   ├── admin.py                   # Administrator routes
+│   ├── auth.py                    # Authentication routes
+│   ├── client.py                  # Client routes
+│   ├── crisis.py                  # Crisis management routes
+│   ├── legal.py                   # Privacy policy & terms routes
+│   ├── messaging.py               # Secure messaging routes
+│   └── therapist.py               # Therapist routes
 │
-└── static/                     # Static files (optional)
-    ├── css/
-    ├── js/
-    └── images/
+├── services/                      # Business logic/services
+│   ├── encryption.py              # Application-level message encryption
+│   ├── sentiment_analyzer.py      # AI sentiment analysis
+│   └── timezone.py                # Timezone utilities
+│
+├── templates/
+│   ├── base.html
+│   ├── index.html
+│   │
+│   ├── admin/
+│   │   └── dashboard.html
+│   │
+│   ├── auth/
+│   │   ├── check_reset.html
+│   │   ├── login.html
+│   │   ├── profile.html
+│   │   ├── register.html
+│   │   └── reset_password.html
+│   │
+│   ├── client/
+│   │   ├── consent_status.html
+│   │   ├── dashboard.html
+│   │   ├── journal.html
+│   │   ├── privacy_settings.html
+│   │   └── prompts.html
+│   │
+│   ├── crisis/
+│   │   ├── log_event.html
+│   │   ├── resources.html
+│   │   └── techniques.html
+│   │
+│   ├── errors/
+│   │   ├── 404.html
+│   │   └── 500.html
+│   │
+│   ├── legal/
+│   │   ├── privacy.html
+│   │   └── terms.html
+│   │
+│   ├── messaging/
+│   │   ├── conversation.html
+│   │   ├── create_capsule.html
+│   │   ├── inbox.html
+│   │   └── prioritized_capsules.html
+│   │
+│   └── therapist/
+│       ├── add_client.html
+│       ├── all_responses.html
+│       ├── client_detail.html
+│       ├── clients.html
+│       ├── create_prompt.html
+│       ├── dashboard.html
+│       └── view_responses.html
+│
+└── .venv/                         # Python virtual environment (not committed)
 ```
-
 ## Installation & Setup
 
 ### Prerequisites
